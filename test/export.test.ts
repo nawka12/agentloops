@@ -184,9 +184,9 @@ test("/api/connect writes the harness files once, and gives a snippet where ther
     assert.deepEqual(a.body.skipped, []);
     assert.match(a.body.next, /run `claude` in /);
     const mj = JSON.parse(readFileSync(join(dir, ".mcp.json"), "utf8")).mcpServers.agentloops;
-    assert.equal(mj.command, "node");
-    assert.deepEqual(mj.args.slice(1), ["mcp", "--project", "kawaii-bass.alp.json", "--scope", "run", "--budget", "1"]);
-    assert.ok(existsSync(mj.args[0]));
+    assert.equal(mj.command, process.execPath);
+    assert.deepEqual(mj.args.slice(2), ["mcp", "--project", "kawaii-bass.alp.json", "--scope", "run", "--budget", "1"]);
+    assert.ok(existsSync(mj.args[1]));
     assert.match(readFileSync(join(dir, ".claude/skills/agentloops/SKILL.md"), "utf8"), /^---\nname: agentloops/);
 
     const b = await post("/api/connect", { harness: "claude-code" });
@@ -199,13 +199,13 @@ test("/api/connect writes the harness files once, and gives a snippet where ther
 
     const c = (await post("/api/connect", { harness: "codex" })).body; // AGENTS.md exists now; the TOML is new
     assert.deepEqual([c.wrote, c.skipped], [[".codex/config.toml"], ["AGENTS.md"]]);
-    assert.match(readFileSync(join(dir, ".codex/config.toml"), "utf8"), /^\[mcp_servers\.agentloops\]\ncommand = "node"\nargs = \[/);
+    assert.ok(readFileSync(join(dir, ".codex/config.toml"), "utf8").startsWith(`[mcp_servers.agentloops]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [`));
     const u = (await post("/api/connect", { harness: "cursor" })).body;
     assert.equal(JSON.parse(readFileSync(join(dir, ".cursor/mcp.json"), "utf8")).mcpServers.agentloops.type, "stdio");
     assert.deepEqual(u.wrote, [".cursor/mcp.json"]);
     const p = (await post("/api/connect", { harness: "opencode" })).body;
     const oc = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8")).mcp.agentloops;
-    assert.deepEqual([p.wrote, oc.type, oc.command[0], oc.command[2]], [["opencode.json"], "local", "node", "mcp"]);
+    assert.deepEqual([p.wrote, oc.type, oc.command[0], oc.command[3]], [["opencode.json"], "local", process.execPath, "mcp"]);
 
     assert.equal((await post("/api/connect", { harness: "emacs" })).status, 400);
   } finally { await s.close(); }

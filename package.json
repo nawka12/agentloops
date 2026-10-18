@@ -1,12 +1,22 @@
 {
   "name": "agentloops",
-  "version": "0.0.1",
-  "private": true,
+  "version": "1.0.0",
   "type": "module",
   "bin": {
-    "agentloops": "src/cli.ts"
+    "agentloops": "dist/cli.js"
   },
+  "engines": {
+    "node": ">=24"
+  },
+  "files": [
+    "dist",
+    "ui",
+    "presets",
+    "examples",
+    "docs/manual.md"
+  ],
   "scripts": {
+    "prepack": "node --disable-warning=ExperimentalWarning scripts/build.mjs",
     "test": "node --test test/*.test.ts"
   },
   "dependencies": {
