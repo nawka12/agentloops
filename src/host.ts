@@ -236,6 +236,17 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     },
     { name: "project_open", scope: "edit", description: "Open an existing project file (resets the undo stack).", inputSchema: obj({ path: S }, ["path"]), run: (a: any) => { const s = open(a.path); return editResult({ file: s.file }); } },
     { name: "project_patch", scope: "edit", description: "Apply RFC 6902 JSON Patch ops (add, remove, replace, move, copy, test) atomically. Covers any field; paths are JSON Pointers like /channels/0/name. Rejected only if an op is malformed or fails.", inputSchema: obj({ ops: { type: "array" } }, ["ops"]), run: (a: any, c: Ctx) => edit((p) => { const r = applyPatch(p, a.ops); if (r !== p) throw new Error("replacing the whole document is not supported; patch its fields"); }, c) },
+    {
+      name: "project_replace", scope: "edit",
+      description: "Replace the whole song with a complete project object in ONE edit: saved, undoable, and shown to the user as yours. Use it to write a song you built in one go (by hand or with a script); prefer upserts/patches for changes to an existing song. Never rejected for validation errors; read the returned errors.",
+      inputSchema: obj({ project: O }, ["project"]),
+      run: (a: any, c: Ctx) => {
+        const np = a.project;
+        if (!np || typeof np !== "object" || Array.isArray(np) || np.format !== "agentloops/1") throw new Error('project must be a whole project object with "format": "agentloops/1"');
+        if (!c.summary) c.summary = `replaced the song${np.name ? `: ${np.name}` : ""}`;
+        return edit((p) => { for (const k of Object.keys(p)) delete p[k]; Object.assign(p, structuredClone(np)); }, c);
+      },
+    },
     upsertTool("channel", "A channel is {id, name, generator:{plugin, params}, keymap:[{key,name,template,schema?}], inputs:[{bus,window,select,as}], context, output, polyphony, retries, onFail}."),
     upsertTool("pattern", "A pattern is {id, name, lengthSteps, loop?:{max, until?}, steps?:{channel:[0|1,..]}, notes?:{channel:[{start,len,key,when?,pass?,slide?}]}}."),
     upsertTool("bus", 'A bus is {id, name, slots:[{plugin, params}], sends:[{to, mode: all|final|sidechain}], join}. id "master" configures the implicit Master bus.'),

@@ -201,3 +201,19 @@ test("relayed run_start streams progress notifications; cancelling a non-harness
     assert.equal(st.voicesRun, 1); // the second note never started
   } finally { await m.client.close(); await s.close(); }
 });
+
+test("project_replace: a whole song in one undoable edit; malformed projects are refused", async () => {
+  const dir = tmp(), file = join(dir, "song.alp.json");
+  copyFileSync(join(root, "examples/p1.alp.json"), file);
+  const h = await mcp(file);
+  try {
+    const song = JSON.parse(readFileSync(join(root, "examples/kawaii-bass.alp.json"), "utf8"));
+    const r = await h.call("project_replace", { project: song });
+    assert.equal(r.errorCount, 0);
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).name, song.name); // saved
+    await assert.rejects(h.call("project_replace", { project: { name: "no format" } }), /format/);
+    const u = await h.call("undo");
+    assert.match(u.undone.summary, /replaced the song: Kawaii Bass/);
+    assert.equal(JSON.parse(readFileSync(file, "utf8")).name, "Draft-Critique-Revise"); // back to before
+  } finally { await h.client.close(); }
+});

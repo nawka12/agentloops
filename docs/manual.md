@@ -104,7 +104,9 @@ Field notes:
 ## Tools (Studio MCP)
 
 Read: `project_get` (`summary: true` for an outline), `project_validate`, `score_view`, `plugin_search`, `take_list`, `take_get`, `studio_status`, `studio_focus`, `studio_view`.
-Edit: `project_create`, `project_open`, `project_patch`, `channel_upsert`, `pattern_upsert`, `bus_upsert`, `arrangement_upsert`, `undo`.
+Edit: `project_create`, `project_open`, `project_replace`, `project_patch`, `channel_upsert`, `pattern_upsert`, `bus_upsert`, `arrangement_upsert`, `undo`.
+
+To write a whole song at once (for example from a generator script), send it with **`project_replace`**. Don't write the file and then `project_open` it. `project_replace` is one undoable edit that the user sees arrive, labeled as yours; reopening a file clears the undo history. Keep any generator script inside the song folder (for example `song.gen.mjs`), so the user can rerun and tweak it. Replacing the `init` starter song ("hello") is fine without asking.
 Run: `run_start`, `run_status`, `run_stop`, `voice_reply`.
 Audio (edit scope): `audio_export` renders the song or one pattern to `mp3` or `wav` in the project folder. Needs an open studio; slow, about 1.6x the song's length (progress is reported). `file` is a plain name, default is the song name; it refuses to overwrite unless `overwrite: true`. Without ffmpeg on PATH an MP3 request keeps the WAV and says so.
 
