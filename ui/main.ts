@@ -4,7 +4,7 @@ import { h, render } from "preact";
 import htm from "htm";
 import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
 import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
-import { blip, chime, click, renderWav, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
+import { blip, chime, click, renderWav, setMetro, setOn, setVol, sound, heard, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
 /** fetch the score for a query string ("pattern=x" or "arrangement=y") and bounce it offline to WAV bytes */
 async function bounce(q: string, tempo?: number) {
@@ -128,13 +128,14 @@ function applyEvent(e: any, live: boolean) {
   if (e.type === "run.start") { S.run = newRun(e); S.runs.push({ id: e.runId, repeat: e.repeat, pattern: e.pattern, master: [] }); if (S.runs.length > 60) S.runs.shift(); }
   if (e.type === "run.end" && hist) Object.assign(hist, { ended: true, cached: !e.summary?.voicesRun && e.summary?.cacheHits > 0 });
   if (e.type === "frame" && e.bus === "master" && e.final && hist) hist.master.push(e);
+  if (live) heard(e.at); // the lookahead's clock, from every live event
   if (live && e.runId === r.id) { // sonification: only for what happens now, never for the replayed log
     const id = `${e.runId}:${e.voice}`;
     if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
       const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
-      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, dur: ((e.len ?? 0) * 60) / bpm() / 96 });
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, dur: ((e.len ?? 0) * 60) / bpm() / 96 }, e.at);
     }
-    if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel));
+    if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel), e.at);
     if (e.type === "frame" && e.kind === "error") blip();
     if (e.type === "frame" && e.bus === "master" && e.final && e.kind !== "error" && !(r as any).chimed) { (r as any).chimed = true; chime(); } // once per run: the song landed
     if (e.type === "run.end") stopAll();
@@ -341,7 +342,7 @@ function Toolbar() {
       <span class="num">$${r.cost.toFixed(2)}<small>/ ${budget != null ? `$${Number(budget).toFixed(2)}` : "—"}</small></span></div>`}
     ${S.notice ? html`<button class="notice" role="status" onClick=${() => { S.notice = null; paint(); }} data-hint="Click to dismiss">${S.notice}</button>` : null}
     <button class=${`errs ${S.errors.length ? "bad" : "ok"}`} onClick=${() => { S.showErrors = !S.showErrors; paint(); }} aria-expanded=${S.showErrors} data-hint="Validation errors: click for path, message and fix">${S.errors.length ? `⚠ ${S.errors.length}` : "✓"}</button>
-    <button class=${`harness${live ? " live" : ""}`} onClick=${openConnect} data-hint=${(h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}. ` : "Edits and runs from Claude Code or any MCP client show up here. ") + "Click to connect a harness."}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness yet"}</button>
+    <button class=${`harness${live ? " live" : ""}`} onClick=${openConnect} data-hint=${(h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}. ` : "Edits and runs from Claude Code or any MCP client show up here. ") + "Click to connect a harness."}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ connect"}</button>
     ${wt.length ? html`<span class="paused" role="status" data-hint="The run is paused until the harness answers with voice_reply. Stop (Space) ends it.">${waitFor(wt[0])}${wt.length > 1 ? ` · ${wt.length} voices` : ""}</span>` : null}
     <div id="hint" role="status" aria-live="polite">${hintText}</div>
   </header>`;

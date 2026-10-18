@@ -99,22 +99,34 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number) {
 const tones = new Map<string, { g: GainNode; oscs: AudioScheduledSourceNode[]; rel: number; until: number }>();
 export type VoiceSound = { sound?: string; gain?: number; dur?: number };
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
-/** A voice started. `dur` is the note's length in seconds at tempo; the tone rings at least that long, longer while the agent runs. */
-export function voiceStart(id: string, key: number, plugin: string, o: VoiceSound = {}) {
+// Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
+// main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
+const LAG = 0.08;
+let skew = Infinity, seen = 0;
+/** Any live event: learn the audio-minus-server clock offset. A leaky minimum: the least-delayed event sets it, and it may creep up
+ *  0.1 ms per second so an audio clock that runs fast can't eat the lookahead. ponytail: the session's first note can be late by its own delay */
+export function heard(at?: number) {
+  if (at == null || !ac) return;
+  const now = ac.currentTime;
+  skew = Math.min(now - at / 1000, skew + (now - seen) * 1e-4); seen = now;
+}
+const when = (at?: number) => { heard(at); return at == null ? ac!.currentTime : Math.max(ac!.currentTime, at / 1000 + skew + LAG); };
+/** A voice started at server time `at`. `dur` is the note's length in seconds at tempo; the tone rings at least that long, longer while the agent runs. */
+export function voiceStart(id: string, key: number, plugin: string, o: VoiceSound = {}, at?: number) {
   stats.events++;
   if (!live() || tones.has(id)) return;
   const kind = kindOf(plugin, o.sound), sustained = !!SUSTAIN[kind] || !["drums", "pluck", "bell"].includes(kind);
   if (sustained && tones.size >= MAX) return;
-  const t = ac!.currentTime, v = note(R, kind, key ?? 60, t, o.gain ?? 1);
+  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1);
   stats.started++;
   if (!v) { stats.stopped++; if (kind === "drums" && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
 }
 /** The voice ended: release at the note's end if it hasn't come yet. failed: plus a dissonant blip. */
-export function voiceEnd(id: string, failed = false) {
+export function voiceEnd(id: string, failed = false, at?: number) {
   stats.events++;
   const v = tones.get(id);
-  if (v && ac) { release(v, ac.currentTime, Math.max(ac.currentTime, v.until)); tones.delete(id); stats.stopped++; stats.active = tones.size; }
+  if (v && ac) { const t = when(at); release(v, ac.currentTime, Math.max(t, v.until)); tones.delete(id); stats.stopped++; stats.active = tones.size; }
   if (failed) blip();
 }
 export function stopAll() { for (const id of [...tones.keys()]) { tones.get(id)!.until = 0; voiceEnd(id); } }
