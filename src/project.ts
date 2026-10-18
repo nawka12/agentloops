@@ -7,6 +7,9 @@ export const BAR = 384; // ticks per bar
 export const STEP = 24; // ticks per step
 // ponytail: `clock` is ignored; 4 beats x 4 steps x 96 ppq is hardwired. Derive from project.clock if other grids are needed.
 
+/** docs/manual.md is the single source for the MCP resource, the Claude Code skill and AGENTS.md. */
+export const MANUAL = readFileSync(new URL("../docs/manual.md", import.meta.url), "utf8");
+
 export type Err = { path: string; message: string; fix: string };
 
 export function loadProject(file: string) {
@@ -24,6 +27,18 @@ export function pos(v: any): number | null {
   return (bar - 1) * BAR + (step - 1) * STEP + tick;
 }
 
+/** A minimal valid project (one script channel, one pattern, one arrangement): runs with no API key. */
+export const starter = (name = "My Song") => ({
+  format: "agentloops/1", name, seed: 1, budgets: { runUsd: 1 },
+  channels: [{
+    id: "hello", name: "Hello", generator: { plugin: "script", params: { code: "return `Hello from ${ctx.note.name}!`;" } },
+    keymap: [{ key: 60, name: "Greet", template: "Say hello" }], inputs: [], context: "fresh", output: "master",
+  }],
+  patterns: [{ id: "intro", name: "Intro", lengthSteps: 16, notes: { hello: [{ start: "1:01", len: 96, key: 60 }] } }],
+  arrangements: [{ id: "main", name: "Main", tracks: [{ name: "Main" }], clips: [{ type: "pattern", ref: "intro", track: 0, start: "1:01" }] }],
+  mixer: { buses: [] },
+});
+
 export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
 const GENS = ["script", "llm.agent"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
@@ -40,6 +55,18 @@ export function validate(p: any): Err[] {
   if (p.format != null && p.format !== "agentloops/1") err("/format", `Unknown format ${JSON.stringify(p.format)}`, 'Set "format": "agentloops/1"');
   const channels: any[] = p.channels ?? [], buses: any[] = p.mixer?.buses ?? [], pats: any[] = p.patterns ?? [], arrs: any[] = p.arrangements ?? [];
   if (p.budgets?.runUsd != null && !(p.budgets.runUsd > 0)) err("/budgets/runUsd", "runUsd must be a positive number", "Use e.g. 5");
+
+  // project-level tool servers (MCP over stdio); channels allow-list them by name
+  const servers: Record<string, any> = p.tools ?? {};
+  if (!servers || typeof servers !== "object" || Array.isArray(servers)) err("/tools", "tools must be an object of servers", 'e.g. {"web": {"mcp": {"command": "npx", "args": ["-y", "some-mcp"]}}}');
+  else for (const [name, s] of Object.entries<any>(servers)) {
+    const sp = (...k: string[]) => ptr("tools", name, ...k);
+    if (!/^[\w-]+$/.test(name)) err(sp(), `Bad tool server name '${name}'`, "Use letters, digits, _ or - (no dots: '<server>.<tool>' splits on the first dot)");
+    const m = s?.mcp;
+    if (typeof m?.command !== "string") err(sp("mcp", "command"), "A tool server needs mcp.command (stdio only for now)", 'e.g. {"mcp": {"command": "npx", "args": ["-y", "some-mcp"]}}');
+    else if (m.args != null && !(Array.isArray(m.args) && m.args.every((a: any) => typeof a === "string"))) err(sp("mcp", "args"), "mcp.args must be an array of strings", 'e.g. ["-y", "some-mcp"]');
+    else if (m.env != null && (typeof m.env !== "object" || Array.isArray(m.env) || Object.values(m.env).some((x) => typeof x !== "string"))) err(sp("mcp", "env"), "mcp.env must be an object of strings", 'e.g. {"TOKEN": "..."}');
+  }
 
   const busIds = new Set(["master"]);
   buses.forEach((b, i) => {
@@ -61,7 +88,17 @@ export function validate(p: any): Err[] {
       if (typeof g.params?.code !== "string") err(at("generator", "params", "code"), "script generator needs params.code", "Add an async function body as a string");
       else try { new AsyncFunction("ctx", g.params.code); } catch (e: any) { err(at("generator", "params", "code"), `script has a syntax error: ${e.message}`, "Fix the JavaScript"); }
     }
-    if (g?.params?.tools?.length) err(at("generator", "params", "tools"), "Tools (MCP) are not supported yet", "Remove tools; MCP arrives in slice 2");
+    if (g?.params?.tools != null) {
+      const ts = g.params.tools;
+      if (!Array.isArray(ts)) err(at("generator", "params", "tools"), "tools must be an array of allow-list entries", 'e.g. ["web", "files.read_file"]');
+      else if (ts.length && g.plugin !== "llm.agent") err(at("generator", "params", "tools"), `${g.plugin} generators do not use tools`, "Remove tools or use llm.agent");
+      else ts.forEach((ref: any, j: number) => {
+        const tp = at("generator", "params", "tools", j), [srv, ...rest] = typeof ref === "string" ? ref.split(".") : [];
+        if (typeof ref !== "string" || !srv || (rest.length && !rest.join("."))) err(tp, `Bad tool reference ${JSON.stringify(ref)}`, 'Use "<server>" or "<server>.<tool>"');
+        else if (!(srv in servers)) err(tp, `Unknown tool server '${srv}'`, `Define it under the project-level "tools" (${Object.keys(servers).join(", ") || "none defined yet"})`);
+      });
+    }
+    if (g?.params?.maxTurns != null && !(Number.isInteger(g.params.maxTurns) && g.params.maxTurns > 0)) err(at("generator", "params", "maxTurns"), "maxTurns must be a positive integer", "Use e.g. 10");
     (c.keymap ?? []).forEach((k: any, j: number) => {
       if (!Number.isInteger(k.key)) err(at("keymap", j, "key"), "Instruction key must be an integer", "Use 60 for the default key");
     });

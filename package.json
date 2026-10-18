@@ -7,10 +7,11 @@
     "agentloops": "src/cli.ts"
   },
   "scripts": {
-    "test": "node --test"
+    "test": "node --test test/*.test.ts"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
-    "@marcbachmann/cel-js": "^8.0.0"
+    "@marcbachmann/cel-js": "^8.0.0",
+    "@modelcontextprotocol/sdk": "^1.32.1"
   }
 }

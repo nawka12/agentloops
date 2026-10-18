@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
-import { compile, BAR } from "./project.ts";
+import { compile, BAR, STEP } from "./project.ts";
 import { evalBool, renderTemplate } from "./expr.ts";
-import { generators } from "./generators.ts";
+import { createMcpPool, generators } from "./generators.ts";
 import { celFrame, createMixer, RunStop } from "./mixer.ts";
 import { openTakes } from "./takes.ts";
 
@@ -10,7 +10,15 @@ const frameHash = (f: any) => sha([f.kind, !!f.final, f.text ?? null, f.json ?? 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const textOf = (f: any) => f.text ?? JSON.stringify(f.json);
 
-export type RunOpts = { arrangement?: string; pattern?: string; input?: unknown; cache?: "fresh" | "prefer"; budget?: number };
+/** Progress event: barrier / pass / voice start+end, always with the pass and cost so far. */
+export type RunEvent = { type: "barrier" | "pass" | "voice"; pass: number; costUsd: number; pos?: string; phase?: "start" | "end"; channel?: string; status?: string };
+export type RunOpts = {
+  arrangement?: string; pattern?: string; input?: unknown; cache?: "fresh" | "prefer"; budget?: number;
+  signal?: AbortSignal; // external abort: stops the run, the take is still saved
+  onEvent?: (e: RunEvent) => void;
+  runId?: string;
+};
+const posStr = (t: number) => `${Math.floor(t / BAR) + 1}:${String(Math.floor((t % BAR) / STEP) + 1).padStart(2, "0")}`;
 
 /** Compile and play a project headlessly. `proj` is { p, dir } from loadProject. */
 export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) {
@@ -18,15 +26,20 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
   const plan = compile(p, opts);
   const takes = openTakes(proj.dir);
   const run: any = {
-    id: randomUUID().slice(0, 8), project: p.name, arrangement: opts.arrangement, start: Date.now(), cache: opts.cache ?? "fresh",
+    id: opts.runId ?? randomUUID().slice(0, 8), project: p.name, arrangement: opts.arrangement, start: Date.now(), cache: opts.cache ?? "fresh",
     costUsd: 0, tokens: 0, pass: 0, loop: { index: 0, max: 1 }, trigger: { payload: opts.input ?? null },
     budget: opts.budget ?? p.budgets?.runUsd ?? null, voices: [], stopped: null, abort: new AbortController(), seq: 0, fid: 0,
   };
   const mixer = createMixer(p, run);
+  run.mcp = createMcpPool(p.tools, proj.dir); // servers connect lazily; closed when the run ends
+  // ponytail: a throwing listener must not kill the run; errors are swallowed
+  const emit = (e: Omit<RunEvent, "pass" | "costUsd">) => { try { opts.onEvent?.({ ...e, pass: run.pass, costUsd: run.costUsd }); } catch {} };
   run.ctx = (extra: object = {}) => ({
     loop: run.loop, run: { costUsd: run.costUsd, elapsedMs: Date.now() - run.start }, trigger: run.trigger, bus: mixer.view, ...extra,
   });
   const stop = (reason: string) => { run.stopped ??= reason; run.abort.abort(); };
+  const onAbort = () => stop("aborted");
+  if (opts.signal?.aborted) onAbort(); else opts.signal?.addEventListener("abort", onAbort, { once: true });
 
   // channels: polyphony queue + conversation state
   const chs: Record<string, any> = {};
@@ -52,7 +65,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     return {
       id: `f${++run.fid}`, runId: run.id, voiceId: v.seq, pos: { bar: Math.floor(v.n.start / BAR) + 1, tick: v.n.start % BAR },
       source: { channel: v.ch.def.id, clip: v.clip.id }, kind: r.kind ?? "message", final: last, role: "assistant",
-      text: r.text, json: r.json, trust: "trusted", meta: r.meta ?? {},
+      text: r.text, json: r.json, trust: r.trust ?? "trusted", meta: r.meta ?? {},
       ord: v.ch.idx * 1e9 + v.seq * 1e3 + i, pass: v.pass, _v: v, // ord: channel order, then note order (<1000 frames per voice)
     };
   }
@@ -62,7 +75,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     const gen = v.ch.def.generator;
     const raw = await generators[gen.plugin]({
       prompt: v.prompt, inputs: v.inputs, note: v.noteCtx, loop: v.loop, trigger: run.trigger, params: gen.params ?? {}, history: v.base,
-      schema: v.instr?.schema, signal: run.abort.signal,
+      schema: v.instr?.schema, signal: run.abort.signal, mcp: run.mcp,
       charge: (usd: number, tokens: number) => { v.costUsd += usd; run.costUsd += usd; run.tokens += tokens; },
       checkBudget: () => { if (run.budget != null && run.costUsd >= run.budget) throw new RunStop(`budget exceeded: $${run.costUsd.toFixed(4)} >= $${run.budget}`); },
     });
@@ -92,13 +105,14 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     if (v.n.slide && prev) { await prev.done.catch(() => {}); v.base = prev.messages ?? []; }
     else v.base = def.context === "persistent" || def.context === "per-pattern" ? [...(v.ch.hist[hk] ?? [])] : [];
     v.startMs = Date.now() - run.start;
+    emit({ type: "voice", phase: "start", channel: def.id });
     const gen = def.generator;
     v.cacheKey = sha([gen.plugin, gen.params ?? {}, v.prompt, v.notePar, v.inFrames.map(frameHash), v.seed, v.base.length ? sha(v.base) : "", run.trigger.payload]);
     const cached = run.cache === "prefer" ? takes.findCached(v.cacheKey) : null;
     let frames;
     if (cached) {
       v.cached = true;
-      frames = cached.map((r, i) => ({ ...mkFrame(v, r, i, r.final), kind: r.kind, meta: { ...r.meta, costUsd: 0, cached: true } }));
+      frames = cached.map((r, i) => ({ ...mkFrame(v, r, i, r.final), kind: r.kind, trust: r.trust ?? "trusted", meta: { ...r.meta, costUsd: 0, cached: true } }));
     } else frames = await generate(v);
     v.frames = frames;
     const final = frames.at(-1);
@@ -137,7 +151,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
         const f = mkFrame(v, { kind: "error", text: e.message }, 0, false);
         v.frames = [f];
         await mixer.receive(f, ch.def.output ?? "master");
-      } finally { release(ch); v.endMs ??= Date.now() - run.start; }
+      } finally { release(ch); v.endMs ??= Date.now() - run.start; if (v.startMs != null) emit({ type: "voice", phase: "end", channel: ch.def.id, status: v.status }); }
     })();
     v.done.catch(() => {});
   }
@@ -156,13 +170,15 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     while (i < points.length) {
       const t = points[i];
       await Promise.all(run.voices.filter((v: any) => v.end <= t).map((v: any) => v.done)); // done + stream tails
+      if (run.stopped) throw new RunStop(run.stopped); // external abort: nothing new starts after the voices in flight finish
       await mixer.flushAll(); // aligned joins for barrier t
+      emit({ type: "barrier", pos: posStr(t) });
       const lc = clips.find((c) => c.loop && c.start + c.len === t && (!replay || replay === c));
       if (lc) {
         run.loop = loopOf(lc);
         const done = (lc.loop.until && evalBool(lc.loop.until, run.ctx())) || lc.index + 1 >= lc.loop.max; // max = number of passes
         mixer.endPass();
-        if (!done) { lc.index++; run.pass++; replay = lc; i = points.findIndex((x) => x >= lc.start); continue; }
+        if (!done) { lc.index++; run.pass++; replay = lc; emit({ type: "pass" }); i = points.findIndex((x) => x >= lc.start); continue; }
         replay = null;
       }
       for (const clip of clips) {
@@ -184,10 +200,12 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
   try { await play(); }
   catch (e: any) { if (e instanceof RunStop) stop(e.message); else { stop(e.message); run.error = e; } }
   await Promise.allSettled(run.voices.map((v: any) => v.done));
-  takes.save(run);
+  opts.signal?.removeEventListener("abort", onAbort);
+  await run.mcp.close();
+  const master = mixer.buses.master.emitted.filter((f: any) => f.final);
+  takes.save(run, master);
   takes.close();
   if (run.error) throw run.error;
-  const master = mixer.buses.master.emitted.filter((f: any) => f.final);
   const voices = run.voices.filter((v: any) => v.status !== "skipped");
   return {
     takeId: run.id, passes: run.pass + 1, costUsd: run.costUsd, stopped: run.stopped as string | null,

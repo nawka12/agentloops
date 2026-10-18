@@ -32,6 +32,8 @@ You get a run you can *see* (the playhead moving across the timeline), *scrub* (
 
 **Built to be driven by agents.** You can make a whole song from Claude Code or any other AI harness, without opening the studio. The harness either talks to AgentLoops over MCP, or edits the JSON project file and calls the CLI (§10.4). The studio is where a human watches the run, scrubs takes and fine-tunes what the agent built.
 
+AgentLoops is controlled **from outside**. It doesn't ship an agent of its own that must drive it. An optional built-in Assistant exists as an alternative for users without a harness. It's simply one more MCP client of Studio MCP, with the same tools, scopes and budgets as any outside harness, and no private API.
+
 ---
 
 ## 2. Goals and non-goals
@@ -43,7 +45,7 @@ You get a run you can *see* (the playhead moving across the timeline), *scrub* (
 - G4. Make agent loops (write, critique, revise until approved) a native construct.
 - G5. Ship the same project headless: `agentloops render` for batch runs, `agentloops serve` for an HTTP API, and `serve --mcp` for an MCP server.
 - G6. Provide an open plugin model: agents, processors and controllers in any language, and tools through MCP.
-- G7. **Harness-first.** A song can be made start to finish from Claude Code or any AI harness, through MCP or through the project file plus the CLI, without the UI (§10.4). Agents running inside a project also get MCP tools for the studio (§10.3).
+- G7. **Harness-first.** A song can be made start to finish from Claude Code or any AI harness, through MCP or through the project file plus the CLI, without the UI (§10.4). An outside harness is the primary way to control AgentLoops, and a built-in assistant is optional, never required. Agents running inside a project also get MCP tools for the studio (§10.3).
 
 ### Non-goals (v1)
 - Hundreds of SaaS connectors. Connectors come from MCP servers, and AgentLoops does not maintain its own.
@@ -122,7 +124,7 @@ The playhead loops the pattern. Each pass shows as a numbered take under the cli
 | Browser / plugin database | **Browser** / plugin database | Agents, instructions, tools, datasets, takes, templates |
 | `.flp` / `.fst` | `.alp.json` / `.alpreset.json` | Plain JSON, git-diffable |
 | Render (Ctrl+R) / stems | **Render** / **stems** | Headless run, with per-bus outputs as stems |
-| Gopher (FL 2025) / Loop Starter (FL 2025) | **Assistant** / **Starter** | Answers from the AgentLoops manual, like Gopher, and builds a first pattern from a goal, like Loop Starter |
+| Gopher (FL 2025) / Loop Starter (FL 2025) | **Assistant** / **Starter** (optional) | A built-in Studio MCP client for users without a harness. It answers from the AgentLoops manual, like Gopher, and builds a first pattern from a goal, like Loop Starter |
 | Stem separation | **Trace separation** | Imports an existing agent log and splits it into channels |
 
 ---
@@ -294,7 +296,7 @@ Steps in the Step Sequencer always use the default key 60. The Piano Roll gives 
 | **Randomize** | Spreads velocity, pan and seed for variant sweeps (P5), seeded |
 | **Ghost notes** | Shows other channels' notes in grey |
 | **Highlight instructions** | Dims rows that have no instruction (the scale-highlighting analogue) |
-| **Riff** (assistant) | Generates a note sequence from a description |
+| **Riff** (optional assistant) | Generates a note sequence from a description |
 
 ### 5.5 Patterns
 
@@ -472,6 +474,7 @@ The app is a single window with dockable, detachable panels and FL-style shortcu
 - **Live edits during playback** take effect at the next barrier (barrier mode) or bar (clocked mode), and never touch a voice that's already running.
 - **Solo** a channel to run only it, with its inputs fed from cached takes.
 - The **hint bar** always describes the control under the cursor, including its automation address.
+- **Connected harnesses** appear in the toolbar, for example `⇄ Claude Code · edit`. Their edits flash briefly where they land, and Undo history shows the client's name next to each one, so the user can watch an outside agent build the song and step in at any point.
 - Color, theme and density are adjustable. Every action is reachable by keyboard and screen reader. The editor canvases expose an accessible list view of notes and clips.
 
 ### 6.3 Shortcuts (FL-compatible where an equivalent exists)
@@ -658,6 +661,8 @@ Every run starts a built-in MCP server, `agentloops.runtime`. A channel adds it 
 
 This is the reason the MCP servers exist. A whole song can be made start to finish from Claude Code or any other AI harness: channels, patterns, arrangement, mixer and tests. The user describes what they want, the harness builds and runs it, and the studio is optional, for watching and fine-tuning.
 
+**Outside harness first, built-in assistant second.** The optional Assistant is a harness bundled with the app. It calls the same Studio MCP tools, under the same scopes and budgets. The rule that keeps the MCP surface complete: if the Assistant can do something, an outside harness can too, and nothing gets a private shortcut.
+
 Both of the following paths can do everything:
 
 | Path | What the harness needs | Best for |
@@ -790,7 +795,7 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 - **Sandboxing.** `script` generators and processors run in a sandbox (worker plus no-network by default, or a container for Python). Out-of-process plugins get only the permissions in their manifest, granted by the user on first load.
 - **Secrets** live in the OS keychain or the environment, never in project files or takes. Takes redact known secret values.
 - **Budgets** are hard limits enforced by the engine (§7.4), and the Panic key always works.
-- **MCP servers AgentLoops provides (§10.1–10.3).** Studio MCP listens on stdio or localhost only, requires a per-client token over HTTP, and runs with an explicit scope (`read`, `edit` or `run`). Every run it starts is subject to budgets. An MCP client can answer `human` voices but can't grant Approval holds, unless the project sets `mcpApprovals: true`, which the UI shows as a red badge. Project-as-MCP uses the same auth as `serve`. Runtime tools are allow-listed per channel, and their calls are recorded like any other tool call.
+- **MCP servers AgentLoops provides (§10.1–10.3).** Studio MCP listens on stdio or localhost only, requires a per-client token over HTTP, and runs with an explicit scope (`read`, `edit` or `run`). Every run it starts is subject to budgets. An MCP client can answer `human` voices but can't grant Approval holds, unless the project sets `mcpApprovals: true`, which the UI shows as a red badge. Project-as-MCP uses the same auth as `serve`. Until `script` code is sandboxed, the `run` scope means a client can execute code on this machine, so only grant it to harnesses you'd trust with a shell. `agentloops init` grants it with a $1 budget cap. Runtime tools are allow-listed per channel, and their calls are recorded like any other tool call.
 - **Audit:** every side-effect action is recorded in the take with its approver.
 
 ---
@@ -839,7 +844,8 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 - Project as an MCP server (`serve --mcp`, §10.2) and the runtime MCP server for agents inside a run (§10.3)
 
 **Phase 3: Ecosystem.**
-- Electron shell, preset/plugin packs (marketplace), the Assistant (Riff, Starter), trace-separation import, OpenTelemetry export
+- Electron shell, preset/plugin packs (marketplace), trace-separation import, OpenTelemetry export
+- The optional built-in Assistant (Riff, Starter). It's a bundled Studio MCP client, built last because outside harnesses already cover its job.
 
 ---
 

@@ -1,13 +1,17 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
-import { readFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { render } from "./engine.ts";
-import { loadProject, pos, STEP, validate, type Err } from "./project.ts";
+import { loadProject, MANUAL, pos, starter, STEP, validate, type Err } from "./project.ts";
 
 const USAGE = `usage:
   agentloops validate <file> [--json]
   agentloops render <file> [--arrangement id] [--pattern id] [--input f.json] [--cache fresh|prefer] [--budget n] [--json]
-  agentloops score <file> [--pattern id]`;
+  agentloops score <file> [--pattern id]
+  agentloops mcp [--project <file>] [--scope read|edit|run] [--budget <usd>]   (Studio MCP server on stdio)
+  agentloops init [dir] [--harness claude-code|agents-md]`;
 
 function load(file: string) {
   try { return loadProject(file); }
@@ -20,7 +24,8 @@ function printErrors(errs: Err[]) {
 /** Text view of arrangement, patterns and mixer (SPEC 10.4). */
 export function score(p: any, onlyPattern?: string): string {
   const out: string[] = [];
-  const chName = (id: string) => p.channels.find((c: any) => c.id === id)?.name ?? id;
+  const channels: any[] = p.channels ?? []; // tolerate half-built projects (the Studio MCP calls this mid-edit)
+  const chName = (id: string) => channels.find((c: any) => c.id === id)?.name ?? id;
   const pats: any[] = (p.patterns ?? []).filter((x: any) => !onlyPattern || x.id === onlyPattern);
   if (!onlyPattern) for (const a of p.arrangements ?? []) {
     const cells: Record<string, string[]> = {}, bars = (c: any) => Math.floor((pos(c.start ?? 0) ?? 0) / 384);
@@ -49,7 +54,7 @@ export function score(p: any, onlyPattern?: string): string {
     for (const [ch, steps] of Object.entries<number[]>(pat.steps ?? {})) steps.forEach((s, i) => { if (s) { row(ch).starts.push(i); row(ch).keys.add(60); } });
     for (const [ch, ns] of Object.entries<any[]>(pat.notes ?? {})) for (const x of ns) { row(ch).starts.push(Math.floor((pos(x.start) ?? 0) / STEP)); row(ch).keys.add(x.key ?? 60); }
     const lines = [...rows].map(([ch, r]) => {
-      const c = p.channels.find((x: any) => x.id === ch);
+      const c = channels.find((x: any) => x.id === ch);
       const ins = (c?.inputs ?? []).map((i: any) => i.bus).join(",");
       const grid = Array.from({ length: n }, (_, s) => {
         const k = r.starts.filter((x) => x === s).length;
@@ -78,12 +83,43 @@ export function score(p: any, onlyPattern?: string): string {
   return out.join("\n");
 }
 
+const SKILL_DESC = "Use when the user asks to make, build, edit, run or debug an AgentLoops song or project (an .alp.json file): a multi-agent pipeline of channels, patterns, buses and loops. Teaches the project format, the Studio MCP tools and the authoring loop.";
+
+/** Create <dir>/song.alp.json plus harness files. Existing files are skipped, never overwritten. */
+function init(dir: string, harness?: string) {
+  const files: [string, string][] = [["song.alp.json", JSON.stringify(starter(), null, 2) + "\n"]];
+  if (harness === "claude-code") {
+    const cli = fileURLToPath(import.meta.url); // absolute path: no global install needed
+    files.push([".mcp.json", JSON.stringify({ mcpServers: { agentloops: { command: "node", args: [cli, "mcp", "--project", "song.alp.json", "--scope", "run", "--budget", "1"] } } }, null, 2) + "\n"]);
+    files.push([".claude/skills/agentloops/SKILL.md", `---\nname: agentloops\ndescription: ${JSON.stringify(SKILL_DESC)}\n---\n\n${MANUAL}`]);
+  } else files.push(["AGENTS.md", MANUAL]);
+  for (const [rel, body] of files) {
+    const path = join(dir, rel);
+    if (existsSync(path)) { console.log(`skipped ${path} (already exists)`); continue; }
+    mkdirSync(dirname(path), { recursive: true });
+    writeFileSync(path, body);
+    console.log(`created ${path}`);
+  }
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const { values, positionals } = parseArgs({
     args: rest, allowPositionals: true,
-    options: { json: { type: "boolean" }, arrangement: { type: "string" }, pattern: { type: "string" }, input: { type: "string" }, cache: { type: "string" }, budget: { type: "string" } },
+    options: {
+      json: { type: "boolean" }, arrangement: { type: "string" }, pattern: { type: "string" }, input: { type: "string" }, cache: { type: "string" }, budget: { type: "string" },
+      project: { type: "string" }, scope: { type: "string" }, harness: { type: "string" },
+    },
   });
+  if (cmd === "mcp") {
+    if (values.scope && !["read", "edit", "run"].includes(values.scope)) { console.error("--scope must be read, edit or run"); process.exit(2); }
+    const { serve } = await import("./mcp.ts"); // lazy: keeps the other commands from loading the MCP SDK
+    return serve({ project: values.project, scope: (values.scope ?? "edit") as any, budget: values.budget ? Number(values.budget) : undefined });
+  }
+  if (cmd === "init") {
+    if (values.harness && !["claude-code", "agents-md"].includes(values.harness)) { console.error("--harness must be claude-code or agents-md"); process.exit(2); }
+    return init(positionals[0] ?? ".", values.harness);
+  }
   const file = positionals[0];
   if (!["validate", "render", "score"].includes(cmd) || !file) { console.error(USAGE); process.exit(2); }
   const proj = load(file);
