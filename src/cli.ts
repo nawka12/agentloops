@@ -3,15 +3,16 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
-import { render } from "./engine.ts";
 import { loadProject, MANUAL, pos, starter, STEP, validate, type Err } from "./project.ts";
+import { loggedRender } from "./sync.ts";
 
 const USAGE = `usage:
   agentloops validate <file> [--json]
   agentloops render <file> [--arrangement id] [--pattern id] [--input f.json] [--cache fresh|prefer] [--budget n] [--json]
   agentloops score <file> [--pattern id]
   agentloops mcp [--project <file>] [--scope read|edit|run] [--budget <usd>]   (Studio MCP server on stdio)
-  agentloops init [dir] [--harness claude-code|agents-md]`;
+  agentloops init [dir] [--harness claude-code|agents-md]
+  agentloops studio <file> [--port 4870] [--no-open]   (local web UI on 127.0.0.1)`;
 
 function load(file: string) {
   try { return loadProject(file); }
@@ -108,7 +109,7 @@ async function main() {
     args: rest, allowPositionals: true,
     options: {
       json: { type: "boolean" }, arrangement: { type: "string" }, pattern: { type: "string" }, input: { type: "string" }, cache: { type: "string" }, budget: { type: "string" },
-      project: { type: "string" }, scope: { type: "string" }, harness: { type: "string" },
+      project: { type: "string" }, scope: { type: "string" }, harness: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
     },
   });
   if (cmd === "mcp") {
@@ -121,6 +122,13 @@ async function main() {
     return init(positionals[0] ?? ".", values.harness);
   }
   const file = positionals[0];
+  if (cmd === "studio" && file) {
+    const { studio } = await import("./studio.ts");
+    const s = await studio({ file, port: values.port ? Number(values.port) : 4870 });
+    console.error(`agentloops studio: ${s.url}  (Ctrl+C to quit)`);
+    if (!values["no-open"]) import("node:child_process").then((c) => c.spawn("xdg-open", [s.url], { stdio: "ignore", detached: true }).on("error", () => {}).unref());
+    return;
+  }
   if (!["validate", "render", "score"].includes(cmd) || !file) { console.error(USAGE); process.exit(2); }
   const proj = load(file);
   const errs = validate(proj.p);
@@ -134,11 +142,11 @@ async function main() {
   if (cmd === "score") { console.log(score(proj.p, values.pattern)); return; }
 
   if (values.cache && !["fresh", "prefer"].includes(values.cache)) { console.error("--cache must be fresh or prefer"); process.exit(2); }
-  const r = await render(proj, {
+  const r = await loggedRender(proj, {
     arrangement: values.arrangement, pattern: values.pattern, cache: values.cache as any,
     input: values.input ? JSON.parse(readFileSync(values.input, "utf8")) : undefined,
     budget: values.budget ? Number(values.budget) : undefined,
-  });
+  }, "cli");
   if (values.json) console.log(JSON.stringify(r.master.map((f: any) => ({ id: f.id, source: f.source, text: f.text, json: f.json, meta: f.meta })), null, 2));
   else console.log(r.master.map((f: any) => f.text ?? JSON.stringify(f.json)).join("\n\n"));
   console.error(`passes ${r.passes} · voices run ${r.voicesRun} · cache hits ${r.cacheHits} · cost $${r.costUsd.toFixed(4)} · take ${r.takeId}` + (r.stopped ? ` · STOPPED: ${r.stopped}` : ""));

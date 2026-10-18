@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -6,9 +6,9 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
 import { score } from "./cli.ts";
-import { render } from "./engine.ts";
 import { checkSchema } from "./mixer.ts";
 import { loadProject, MANUAL, starter, validate, type Err } from "./project.ts";
+import { appendEvent, loggedRender, refresh, writeJson } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
 // ---- RFC 6902 JSON Patch (handwritten, atomic: works on a clone, any bad op throws and nothing is applied) ----
@@ -86,7 +86,7 @@ const text = (v: any) => ({ content: [{ type: "text", text: typeof v === "string
 const RANK = { read: 0, edit: 1, run: 2 } as const;
 const clip = (s: any, n = 200) => { s = typeof s === "string" ? s : JSON.stringify(s); return s == null ? s : s.length > n ? s.slice(0, n) + "…" : s; };
 // validate() is not shape-hardened; a crash on a half-built project is reported as one error instead of rejecting the edit
-const check = (p: any): Err[] => { try { return validate(p); } catch (e: any) { return [{ path: "/", message: `project cannot be validated: ${e.message}`, fix: "Check the types of the fields you just edited (arrays vs objects vs strings)" }]; } };
+export const check = (p: any): Err[] => { try { return validate(p); } catch (e: any) { return [{ path: "/", message: `project cannot be validated: ${e.message}`, fix: "Check the types of the fields you just edited (arrays vs objects vs strings)" }]; } };
 
 function outline(p: any) {
   const arr = (x: any): any[] => (Array.isArray(x) ? x : []);
@@ -101,10 +101,12 @@ function outline(p: any) {
 
 export async function serve(o: { project?: string; scope: keyof typeof RANK; budget?: number }) {
   const cap = o.budget ?? 5; // ponytail: default spend cap per run_start when --budget is not given
-  let st: { file: string; p: any; undo: string[] } | null = null;
-  const cur = () => st ?? (() => { throw new Error("no project is open: call project_create or project_open first"); })();
-  const open = (file: string) => { st = { file: resolve(file), p: loadProject(file).p, undo: [] }; return st; };
-  const write = () => { mkdirSync(dirname(st!.file), { recursive: true }); writeFileSync(st!.file, JSON.stringify(st!.p, null, 2) + "\n"); };
+  let st: { file: string; p: any; ver?: string | null; undo: string[] } | null = null;
+  // reload first if another process (the studio, an editor) changed the file, so a stale copy never overwrites its edits.
+  // ponytail: undo snapshots stay whole-project copies, so undo after an outside edit also reverts that edit
+  const cur = () => st ? refresh(st) : (() => { throw new Error("no project is open: call project_create or project_open first"); })();
+  const open = (file: string) => { st = { file: resolve(file), p: null, undo: [] }; st.p = loadProject(file).p; return refresh(st); };
+  const write = () => { st!.ver = writeJson(st!.file, st!.p); };
   /** Apply `fn` to a clone; on success snapshot for undo, swap in, write to disk. Validation errors never reject an edit. */
   const edit = (fn: (p: any) => any) => {
     const s = cur(), next = structuredClone(s.p), out = fn(next) ?? {};
@@ -198,14 +200,14 @@ export async function serve(o: { project?: string; scope: keyof typeof RANK; bud
         const r: any = { id: randomUUID().slice(0, 8), status: "running", ac: new AbortController(), pass: 0, costUsd: 0, pos: null, started: Date.now() };
         let n = 0;
         runs.set(r.id, r);
-        r.promise = render({ p: structuredClone(s.p), dir: dirname(s.file) }, {
+        r.promise = loggedRender({ p: structuredClone(s.p), dir: dirname(s.file) }, {
           arrangement: a.arrangement, pattern: a.pattern, input: a.input, cache: a.cache, budget, signal: r.ac.signal, runId: r.id,
           onEvent: (e) => {
             r.pass = e.pass; r.costUsd = e.costUsd; if (e.pos) r.pos = e.pos;
             if (wait && token != null && e.type !== "voice")
               extra.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: ++n, message: `${e.type} · bar:step ${r.pos ?? "-"} · pass ${e.pass} · $${e.costUsd.toFixed(4)}` } }).catch(() => {});
           },
-        }).then(
+        }, source()).then(
           (x) => { r.status = x.stopped ? "stopped" : "done"; r.result = { passes: x.passes, stopped: x.stopped, voicesRun: x.voicesRun, cacheHits: x.cacheHits, skipped: x.skipped, costUsd: x.costUsd, master: x.master.map((f: any) => ({ text: f.text, json: f.json })) }; },
           (e) => { r.status = "failed"; r.error = e.message; },
         );
@@ -226,6 +228,7 @@ export async function serve(o: { project?: string; scope: keyof typeof RANK; bud
     capabilities: { tools: {}, resources: {} },
     instructions: "Read the agentloops://manual resource first. Edits are applied and saved even when the project is invalid: read the returned errors (path, message, fix) and keep going.",
   });
+  const source = () => `mcp:${server.getClientVersion()?.name ?? "unknown"}`;
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: allowed.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) }));
   server.setRequestHandler(CallToolRequestSchema, async (req, extra) => {
     try {
@@ -233,7 +236,12 @@ export async function serve(o: { project?: string; scope: keyof typeof RANK; bud
       if (!t) throw new Error(`unknown tool '${req.params.name}' (scope ${o.scope})`);
       const args = req.params.arguments ?? {}, bad = checkSchema(t.inputSchema, args);
       if (bad) throw new Error(`bad arguments: ${bad}`);
-      return await t.run(args, extra);
+      const out = await t.run(args, extra);
+      if (t.scope === "edit" && st) try { // the event log is how an open studio learns who edited what
+        const sum = args.ops ? (args.ops as any[]).map((x) => `${x?.op} ${x?.path}`).join(", ") : Object.values<any>(args).find((x) => x?.id)?.id ?? args.path ?? "";
+        appendEvent(dirname(st.file), { type: "edit", source: source(), tool: t.name, summary: String(sum).slice(0, 200) });
+      } catch {}
+      return out;
     } catch (e: any) { return { isError: true, content: [{ type: "text", text: e.message }] }; }
   });
   server.setRequestHandler(ListResourcesRequestSchema, async () => ({ resources: [{ uri: "agentloops://manual", name: "AgentLoops manual", mimeType: "text/markdown", description: "Concepts, project format and the authoring loop" }] }));

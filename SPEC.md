@@ -816,6 +816,8 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 
 **Engine ↔ UI protocol:** JSON over WebSocket. Commands go in (`edit`, `play`, `stop`, `seek`, `bounce`…), and events come out (`voice.*`, `frame`, `meter`, `barrier`, `take.*`). The UI never computes run state on its own. Studio MCP (§10.1) is a second adapter over the same commands and events, so anything the UI can do, an agent can do.
 
+> **Slice 3 deviations.** The studio uses Server-Sent Events (`GET /api/events`) for server → browser and `fetch` POSTs for browser → server instead of a WebSocket. The UI is plain DOM plus Canvas 2D in type-stripped TypeScript (`ui/*.ts`, no framework, no build step) instead of React. `agentloops mcp` and `agentloops studio` are separate processes that sync through the project file (reload before edit) and the shared log `.agentloops/events.jsonl`.
+
 ---
 
 ## 14. Roadmap

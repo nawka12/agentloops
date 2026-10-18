@@ -9,9 +9,13 @@ const sha = (x: unknown) => createHash("sha256").update(typeof x === "string" ? 
 const frameHash = (f: any) => sha([f.kind, !!f.final, f.text ?? null, f.json ?? null]);
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 const textOf = (f: any) => f.text ?? JSON.stringify(f.json);
+const trunc = (s?: string, n = 160) => (s && s.length > n ? s.slice(0, n) + "…" : s);
 
 /** Progress event: barrier / pass / voice start+end, always with the pass and cost so far. */
-export type RunEvent = { type: "barrier" | "pass" | "voice"; pass: number; costUsd: number; pos?: string; phase?: "start" | "end"; channel?: string; status?: string };
+export type RunEvent = {
+  type: "barrier" | "pass" | "voice"; pass: number; costUsd: number; pos?: string; phase?: "start" | "end"; channel?: string; status?: string;
+  voice?: number; key?: number; bus?: string; voiceCostUsd?: number; frames?: number; cached?: boolean; text?: string; error?: string; // voice details
+};
 export type RunOpts = {
   arrangement?: string; pattern?: string; input?: unknown; cache?: "fresh" | "prefer"; budget?: number;
   signal?: AbortSignal; // external abort: stops the run, the take is still saved
@@ -105,7 +109,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     if (v.n.slide && prev) { await prev.done.catch(() => {}); v.base = prev.messages ?? []; }
     else v.base = def.context === "persistent" || def.context === "per-pattern" ? [...(v.ch.hist[hk] ?? [])] : [];
     v.startMs = Date.now() - run.start;
-    emit({ type: "voice", phase: "start", channel: def.id });
+    emit({ type: "voice", phase: "start", channel: def.id, voice: v.seq, key: v.n.key, bus: def.output ?? "master" });
     const gen = def.generator;
     v.cacheKey = sha([gen.plugin, gen.params ?? {}, v.prompt, v.notePar, v.inFrames.map(frameHash), v.seed, v.base.length ? sha(v.base) : "", run.trigger.payload]);
     const cached = run.cache === "prefer" ? takes.findCached(v.cacheKey) : null;
@@ -151,7 +155,8 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
         const f = mkFrame(v, { kind: "error", text: e.message }, 0, false);
         v.frames = [f];
         await mixer.receive(f, ch.def.output ?? "master");
-      } finally { release(ch); v.endMs ??= Date.now() - run.start; if (v.startMs != null) emit({ type: "voice", phase: "end", channel: ch.def.id, status: v.status }); }
+      } finally { release(ch); v.endMs ??= Date.now() - run.start; if (v.startMs != null) emit({ type: "voice", phase: "end", channel: ch.def.id, status: v.status, voice: v.seq, key: n.key, bus: ch.def.output ?? "master",
+        voiceCostUsd: v.costUsd, frames: v.frames.length, cached: v.cached, error: v.error, text: trunc(v.frames.at(-1) && textOf(v.frames.at(-1))) }); }
     })();
     v.done.catch(() => {});
   }
@@ -211,5 +216,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     takeId: run.id, passes: run.pass + 1, costUsd: run.costUsd, stopped: run.stopped as string | null,
     voicesRun: voices.filter((v: any) => !v.cached).length, cacheHits: voices.filter((v: any) => v.cached).length,
     skipped: run.voices.length - voices.length, master,
+    // frames each bus emitted, including those that arrived through sends (mixer meters)
+    buses: Object.fromEntries(Object.entries<any>(mixer.buses).map(([id, b]) => [id, { frames: b.emitted.length, errors: b.emitted.filter((f: any) => f.kind === "error").length }])),
   };
 }

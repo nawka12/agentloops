@@ -54,9 +54,9 @@ export function openTakes(dir: string) {
       const run = db.prepare("SELECT * FROM runs WHERE id = ?").get(id) as any;
       if (!run) return null;
       const last = db.prepare("SELECT kind, text, json FROM frames WHERE voiceId = ? ORDER BY seq DESC LIMIT 1");
-      const voices = (db.prepare("SELECT id, channel, key, pass, status, costUsd, cached, bus FROM voices WHERE runId = ? AND status != 'skipped' ORDER BY note").all(id) as any[]).map((v) => {
+      const voices = (db.prepare("SELECT id, note, channel, key, pass, status, startMs, endMs, costUsd, cached, bus FROM voices WHERE runId = ? AND status != 'skipped' ORDER BY note").all(id) as any[]).map((v) => {
         const f = last.get(v.id) as any;
-        return { channel: v.channel, key: v.key, pass: v.pass, status: v.status, costUsd: v.costUsd, cached: !!v.cached, bus: v.bus, kind: f?.kind, text: f?.text ?? f?.json ?? undefined };
+        return { voice: v.note, channel: v.channel, key: v.key, startMs: v.startMs, endMs: v.endMs, pass: v.pass, status: v.status, costUsd: v.costUsd, cached: !!v.cached, bus: v.bus, kind: f?.kind, text: f?.text ?? f?.json ?? undefined };
       });
       return { run, voices, master: parseFrames(db.prepare("SELECT text, json, meta FROM master WHERE runId = ? ORDER BY seq").all(id)) };
     },
@@ -65,8 +65,8 @@ export function openTakes(dir: string) {
       const where = ["fr.runId = ?"], args: any[] = [id];
       for (const [col, val] of [["v.bus", f.bus], ["v.channel", f.channel], ["fr.kind", f.kind], ["v.pass", f.pass]] as const)
         if (val != null) { where.push(`${col} = ?`); args.push(val); }
-      const rows = db.prepare(`SELECT v.channel, v.bus, v.pass, fr.seq, fr.kind, fr.final, fr.text, fr.json, fr.meta, fr.trust FROM frames fr JOIN voices v ON v.id = fr.voiceId WHERE ${where.join(" AND ")} ORDER BY v.note, fr.seq`).all(...args) as any[];
-      return rows.map((r) => ({ channel: r.channel, bus: r.bus, pass: r.pass, kind: r.kind, final: !!r.final, trust: r.trust, ...parseFrames([r])[0] }));
+      const rows = db.prepare(`SELECT v.note, v.channel, v.bus, v.pass, fr.seq, fr.kind, fr.final, fr.text, fr.json, fr.meta, fr.trust FROM frames fr JOIN voices v ON v.id = fr.voiceId WHERE ${where.join(" AND ")} ORDER BY v.note, fr.seq`).all(...args) as any[];
+      return rows.map((r) => ({ voice: r.note, channel: r.channel, bus: r.bus, pass: r.pass, kind: r.kind, final: !!r.final, trust: r.trust, ...parseFrames([r])[0] }));
     },
     close: () => db.close(),
   };
