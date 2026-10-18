@@ -51,16 +51,16 @@ test("validate reports a bus send cycle with a JSON Pointer path", () => {
 });
 
 test("a 3-note chord runs 3 voices concurrently; the next note waits for all of them", async () => {
-  const S = (globalThis as any).__chord = { running: 0, max: 0, done: 0, doneAtNext: -1, runningAtNext: -1 };
+  // scripts are sandboxed (no shared globals), so concurrency is read off the wall-clock intervals they report
   const ch = (id: string, code: string, keys: number[]) => ({
     id, name: id, generator: { plugin: "script", params: { code } },
     keymap: keys.map((key) => ({ key, name: `k${key}`, template: "x" })), inputs: [], polyphony: 4,
   });
-  const chord = "const s = globalThis.__chord; s.running++; s.max = Math.max(s.max, s.running); await new Promise(r => setTimeout(r, 30 + ctx.note.key)); s.running--; s.done++; return 'ok';";
-  const next = "const s = globalThis.__chord; s.doneAtNext = s.done; s.runningAtNext = s.running; return 'next';";
+  const chord = "const s = Date.now(); await new Promise(r => setTimeout(r, 30 + ctx.note.key)); return { json: { chord: [s, Date.now()] } };";
+  const second = "return { json: { next: Date.now() } };";
   const p = {
     format: "agentloops/1", name: "chord",
-    channels: [ch("a", chord, [60, 62, 64]), ch("b", next, [60])],
+    channels: [ch("a", chord, [60, 62, 64]), ch("b", second, [60])],
     patterns: [{ id: "p", notes: {
       a: [60, 62, 64].map((key) => ({ start: 0, len: 96, key })),
       b: [{ start: 96, len: 96, key: 60 }] } }],
@@ -68,19 +68,19 @@ test("a 3-note chord runs 3 voices concurrently; the next note waits for all of 
   };
   assert.deepEqual(validate(p), []);
   const r = await render({ p, dir: tmp() });
-  assert.equal(S.max, 3);
-  assert.equal(S.doneAtNext, 3);
-  assert.equal(S.runningAtNext, 0);
+  const chords = r.master.map((f: any) => f.json?.chord).filter(Boolean) as number[][], next = r.master.map((f: any) => f.json?.next).find(Boolean) as number;
+  assert.equal(chords.length, 3);
+  assert.ok(Math.max(...chords.map((c) => c[0])) < Math.min(...chords.map((c) => c[1]))); // all three were running at once
+  assert.ok(next >= Math.max(...chords.map((c) => c[1]))); // the next note started after all of them finished
   assert.equal(r.voicesRun, 4);
   assert.equal(r.master.length, 4); // unrouted channels go to Master
 });
 
 test("a validator retry's valid output is what the take records and the cache replays", async () => {
-  const S = (globalThis as any).__retry = { calls: 0 };
   const p = {
     format: "agentloops/1", name: "retry",
     channels: [{ id: "c", name: "c", output: "review", retries: 1, inputs: [],
-      generator: { plugin: "script", params: { code: "const s = globalThis.__retry; s.calls++; return s.calls === 1 ? { json: {} } : { json: { approved: true } };" } },
+      generator: { plugin: "script", params: { code: "return ctx.attempt === 1 ? { json: {} } : { json: { approved: true } };" } },
       keymap: [{ key: 60, name: "k", template: "x" }] }],
     patterns: [{ id: "p", notes: { c: [{ start: 0, len: 96, key: 60 }] } }],
     arrangements: [{ id: "m", clips: [{ ref: "p", start: 0, len: 384 }] }],
@@ -89,10 +89,9 @@ test("a validator retry's valid output is what the take records and the cache re
   assert.deepEqual(validate(p), []);
   const proj = { p, dir: tmp() };
   const r1 = await render(proj);
-  assert.equal(S.calls, 2);
   assert.deepEqual(r1.master[0].json, { approved: true });
   const r2 = await render(proj, { cache: "prefer" });
-  assert.equal(S.calls, 2); // replayed the valid retry output, no fresh generation
+  assert.equal(r2.voicesRun, 0); // replayed the valid retry output, no fresh generation
   assert.equal(r2.cacheHits, 1);
   assert.deepEqual(r2.master[0].json, { approved: true });
 });
