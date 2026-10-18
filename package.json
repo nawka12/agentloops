@@ -18,12 +18,13 @@
     "dist",
     "ui",
     "presets",
-    "examples",
+    "examples/*.alp.json",
     "docs/manual.md"
   ],
   "scripts": {
-    "prepack": "node --disable-warning=ExperimentalWarning scripts/build.mjs",
-    "test": "node --test test/*.test.ts"
+    "prepack": "npm run build",
+    "test": "node --test test/*.test.ts",
+    "build": "node --disable-warning=ExperimentalWarning scripts/build.mjs"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
