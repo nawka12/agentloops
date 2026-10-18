@@ -6,19 +6,44 @@ import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } fr
 import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
 import { blip, chime, click, renderWav, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
-/** Ctrl+Alt+R: bounce the song (SONG) or current pattern (PAT) to a WAV, offline, and download it */
-export async function exportAudio() {
+/** fetch the score for a query string ("pattern=x" or "arrangement=y") and bounce it offline to WAV bytes */
+async function bounce(q: string, tempo?: number) {
+  const score = await (await fetch(`/api/score?${q}`)).json();
+  if (score.error) throw new Error(score.error);
+  return { score, wav: await renderWav({ ...score, ...(tempo ? { bpm: tempo } : {}) }) };
+}
+/** Ctrl+Alt+R: bounce the song (SONG) or current pattern (PAT) to a WAV, offline, and download it. Shift: the host saves an MP3 in the project folder instead. */
+export async function exportAudio(toFolder = false) {
   if (S.exporting) return;
   S.exporting = true; paint();
   try {
     const q = S.mode === "pat" ? `pattern=${encodeURIComponent(curPattern()?.id ?? "")}` : `arrangement=${encodeURIComponent(S.project.arrangements?.[0]?.id ?? "")}`;
-    const score = await (await fetch(`/api/score?${q}`)).json();
-    if (score.error) throw new Error(score.error);
-    const url = URL.createObjectURL(new Blob([await renderWav({ ...score, bpm: bpm() })], { type: "audio/wav" })), a = document.createElement("a");
+    if (toFolder) { // same path as the MCP tool: slow (about 1.6x the song's length), and it refuses to overwrite a file of the same name
+      S.notice = "Rendering MP3 for the project folder…"; paint();
+      const r = await fetch("/api/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id }) }), j = await r.json();
+      if (!r.ok) throw new Error(j.error);
+      S.notice = `Saved ${j.file.split("/").pop()} (${j.seconds} s)${j.note ? `: ${j.note}` : ""}`;
+      return;
+    }
+    const { score, wav } = await bounce(q, bpm());
+    const url = URL.createObjectURL(new Blob([wav], { type: "audio/wav" })), a = document.createElement("a");
     a.href = url; a.download = `${(score.name ?? "song").replace(/[^\w.-]+/g, "-")}.wav`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
     S.notice = `Exported ${a.download}`;
   } catch (e: any) { S.notice = `Export failed: ${e.message}`; }
   finally { S.exporting = false; paint(); }
+}
+
+/** The host asked this tab (or a headless browser, via ?export=<id>) to render audio: bounce, then upload to /api/export/:id (or report the error). */
+const cancelled = new Set<string>();
+async function hostExport(x: { id: string; arrangement?: string; pattern?: string }) {
+  const up = (body: BodyInit, type: string) => fetch(`/api/export/${x.id}`, { method: "POST", headers: { "content-type": type }, body });
+  try {
+    const q = x.pattern ? `pattern=${encodeURIComponent(x.pattern)}` : x.arrangement ? `arrangement=${encodeURIComponent(x.arrangement)}` : "";
+    const { wav } = await bounce(q);
+    if (cancelled.delete(x.id)) return;
+    const r = await up(wav, "audio/wav");
+    if (!r.ok) throw new Error((await r.json()).error);
+  } catch (e: any) { if (!cancelled.has(x.id)) await up(JSON.stringify({ error: e.message }), "application/json").catch(() => {}); }
 }
 
 export const html = htm.bind(h);
@@ -46,6 +71,7 @@ export const S: any = {
   flash: new Set<string>(), lastHarness: null as any, bpm: null as number | null, showErrors: false,
   loop: null as any, repeats: 0, capUsd: null as number | null, notice: null as string | null, meters: {} as Record<string, any>, sendMode: "final",
   menu: null as any, picker: null as any, slotEd: null as any, pop2: null as any, wins: {} as Record<string, any>,
+  connect: { res: {} as Record<string, any>, busy: null as string | null },
 };
 export const playing = () => S.run.running || S.serverPlaying;
 export const bpm = () => S.bpm ?? S.project?.clock?.bpm ?? 120;
@@ -296,7 +322,7 @@ function Toolbar() {
         onWheel=${(e: WheelEvent) => { e.preventDefault(); setVol(sound.vol + (e.deltaY < 0 ? 0.05 : -0.05)); paint(); }}
         data-hint=${`Sound ${sound.on ? "on" : "off"}, volume ${Math.round(sound.vol * 100)}%. Click to toggle, scroll to change the volume. Each voice is a tone at its note's key while the agent runs; Master frames chime, errors blip.`}>${sound.on ? "♪" : "♪̸"}<small>${Math.round(sound.vol * 100)}</small></button>
       <button class=${`metro${sound.metro ? " on" : ""}`} aria-pressed=${sound.metro} aria-label="Metronome" onClick=${() => { setMetro(!sound.metro); paint(); }} data-hint="Metronome: a click on each beat while playing, accent on the bar">♩</button>
-      <button class="metro" aria-label="Export audio" onClick=${exportAudio} disabled=${!!S.exporting} data-hint=${`Export audio: bounce the ${S.mode === "pat" ? "current pattern" : "song"} to a WAV, offline, with the same instruments (Ctrl+Alt+R)`}>${S.exporting ? "…" : "⤓"}</button>
+      <button class="metro" aria-label="Export audio" onClick=${(e: MouseEvent) => exportAudio(e.shiftKey)} disabled=${!!S.exporting} data-hint=${`Export audio: bounce the ${S.mode === "pat" ? "current pattern" : "song"} to a WAV, offline, with the same instruments (Ctrl+Alt+R). Shift+click: Save MP3 to project folder (slower: the studio renders it).`}>${S.exporting ? "…" : "⤓"}</button>
     </div>
     <div class="grp">
       <button onClick=${() => post("/api/undo")} disabled=${!S.project} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶</button>
@@ -315,10 +341,40 @@ function Toolbar() {
       <span class="num">$${r.cost.toFixed(2)}<small>/ ${budget != null ? `$${Number(budget).toFixed(2)}` : "—"}</small></span></div>`}
     ${S.notice ? html`<button class="notice" role="status" onClick=${() => { S.notice = null; paint(); }} data-hint="Click to dismiss">${S.notice}</button>` : null}
     <button class=${`errs ${S.errors.length ? "bad" : "ok"}`} onClick=${() => { S.showErrors = !S.showErrors; paint(); }} aria-expanded=${S.showErrors} data-hint="Validation errors: click for path, message and fix">${S.errors.length ? `⚠ ${S.errors.length}` : "✓"}</button>
-    <span class=${`harness${live ? " live" : ""}`} data-hint=${h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}` : "Edits and runs from Claude Code or any MCP client show up here"}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness"}</span>
+    <button class=${`harness${live ? " live" : ""}`} onClick=${openConnect} data-hint=${(h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}. ` : "Edits and runs from Claude Code or any MCP client show up here. ") + "Click to connect a harness."}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness yet"}</button>
     ${wt.length ? html`<span class="paused" role="status" data-hint="The run is paused until the harness answers with voice_reply. Stop (Space) ends it.">${waitFor(wt[0])}${wt.length > 1 ? ` · ${wt.length} voices` : ""}</span>` : null}
     <div id="hint" role="status" aria-live="polite">${hintText}</div>
   </header>`;
+}
+
+// ---- Connect a harness: writes the project-local MCP config + AGENTS.md for the chosen coding agent ----
+const HARNESS_LIST: { id: string; name: string; desc: string }[] = [];
+const copy = (text: string) => navigator.clipboard.writeText(text).then(() => setHint("Copied"), () => setHint("Copy failed: select the text and copy it by hand"));
+async function connect(id: string) {
+  S.connect.busy = id; paint();
+  try {
+    const r = await fetch("/api/connect", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ harness: id }) }), j = await r.json();
+    S.connect.res[id] = r.ok ? j : { error: j.error };
+  } catch (e: any) { S.connect.res[id] = { error: e.message }; }
+  S.connect.busy = null; paint();
+}
+export async function openConnect() {
+  if (!HARNESS_LIST.length) HARNESS_LIST.push(...(await (await fetch("/api/harnesses")).json()));
+  openWin("connect", 560, 520);
+}
+function Connect() {
+  const c = S.connect;
+  return html`<div class="connect">
+    <p class="blurb">Pick the coding agent you use. Studio writes its project-local MCP settings (and AGENTS.md) next to ${S.file}; files that already exist are left alone.</p>
+    ${HARNESS_LIST.map((x) => { const r = c.res[x.id]; return html`<div class="hrow" key=${x.id}>
+      <div class="hhead"><span><b>${x.name}</b><span class="muted"> ${x.desc}</span></span>
+        <button onClick=${() => connect(x.id)} disabled=${c.busy === x.id}>${c.busy === x.id ? "…" : r && !r.error ? "Set up again" : "Set up"}</button></div>
+      ${r?.error ? html`<p class="bad">${r.error}</p>` : r ? html`
+        ${r.wrote.length ? html`<p>Wrote ${r.wrote.map((f: string) => html`<code>${f}</code> `)}</p>` : null}
+        ${r.skipped.length ? html`<p class="muted">Already there, skipped ${r.skipped.map((f: string) => html`<code>${f}</code> `)}</p>` : null}
+        <p class="next"><span>Next: ${r.next}</span><button onClick=${() => copy(r.next)} aria-label="Copy the next step">Copy</button></p>
+        ${r.snippet ? html`<div class="snip"><button onClick=${() => copy(r.snippet)} aria-label="Copy the snippet">Copy</button><pre>${r.snippet}</pre></div>` : null}` : null}
+    </div>`; })}</div>`;
 }
 
 function Errors() {
@@ -337,6 +393,7 @@ function App() {
       <${Win} id="tracer" sub=${S.latest ? `take ${S.latest.run.id}` : ""}>${Tracer()}<//>
       <${Win} id="monitor" sub=${S.monTab === "live" ? "live, this pass" : S.monTab === "bus" ? `bus ${mb}` : "Master"}>${Monitor()}<//>
       <${Win} id="browser" sub="drag or double-click">${Browser()}<//>
+      <${Win} id="connect" title="Connect a harness" sub="coding agents" tag=${html`<span></span>`}>${Connect()}<//>
       ${Object.keys(S.wins).filter((k) => k.startsWith("ch:") && S.wins[k].open).map((k) => {
         const c = (S.project.channels ?? []).find((x: any) => x.id === k.slice(3));
         return html`<${Win} key=${k} id=${k} cls="chwin" title=${c?.name ?? k.slice(3)} style=${`--c:${c?.color ?? "#9aa5ae"}`} sub=${c ? `→ ${c.output && c.output !== "master" ? (S.project.mixer?.buses ?? []).find((x: any) => x.id === c.output)?.name ?? c.output : "Master"}` : "deleted"} tag=${html`<span class="plug">${c?.generator?.plugin ?? "—"}</span>`}>${ChannelWin(k.slice(3))}<//>`;
@@ -448,7 +505,7 @@ document.addEventListener("keydown", (ev) => {
   if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return void post("/api/undo"); }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
-  else if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && ev.altKey) { ev.preventDefault(); exportAudio(); }
+  else if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && ev.altKey) { ev.preventDefault(); exportAudio(ev.shiftKey); }
   else if (ev.key === "l" || ev.key === "L") { S.mode = S.mode === "pat" ? "song" : "pat"; paint(); }
   else if (ev.key === "Escape") { Object.assign(S, { showErrors: false, menu: null, picker: null, slotEd: null, pop2: null }); paint(); }
 });
@@ -458,6 +515,13 @@ document.addEventListener("pointerdown", (e) => {
   Object.assign(S, { menu: null, picker: null, slotEd: null, pop2: null }); paint();
 }, true);
 setInterval(() => S.project && paint(), 1000); // "3s ago" labels
+
+// ?export=<id>: a headless browser opened by the host only renders that export (no state, no SSE, no windows) and never goes on to boot the studio
+const xq = new URLSearchParams(location.search), xid = xq.get("export");
+if (xid) {
+  await hostExport({ id: xid, arrangement: xq.get("arrangement") ?? undefined, pattern: xq.get("pattern") ?? undefined });
+  await new Promise(() => {});
+}
 
 const boot = JSON.parse(document.getElementById("boot")?.textContent ?? "null") ?? await (await fetch("/api/state")).json();
 await loadCatalog();
@@ -471,4 +535,11 @@ const es = new EventSource("/api/events");
 es.addEventListener("state", (m) => { setState(JSON.parse(m.data), true); paint(); });
 es.addEventListener("event", (m) => { onEvent(JSON.parse(m.data), true); paint(); });
 es.addEventListener("focus", (m) => showFocus(JSON.parse(m.data)));
+es.addEventListener("export", (m) => { // audio_export: answer at once so the host knows this tab is rendering
+  const x = JSON.parse(m.data);
+  fetch(`/api/export/${x.id}/ack`, { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }).catch(() => {});
+  S.notice = "Rendering audio for the agent…"; paint();
+  hostExport(x).finally(() => { S.notice = "Audio rendered for the agent"; paint(); });
+});
+es.addEventListener("export-cancel", (m) => { cancelled.add(JSON.parse(m.data).id); });
 es.addEventListener("loop", (m) => { S.loop = JSON.parse(m.data); paint(); });

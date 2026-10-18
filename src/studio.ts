@@ -7,6 +7,8 @@ import { stripTypeScriptTypes } from "node:module";
 import { fileURLToPath } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { score } from "./cli.ts";
+import { harnessFiles, HARNESSES } from "./connect.ts";
+import { exporter, MAX_WAV, wavSeconds } from "./export.ts";
 import { applyPatch, check, createHost, PLUGINS, RANK } from "./host.ts";
 import { compile, starter } from "./project.ts";
 import { appendEvent, eventsFile, refresh, studioFile, writeJson } from "./sync.ts";
@@ -27,11 +29,15 @@ export async function studio(o: { file: string; port?: number }) {
   mkdirSync(dirname(log), { recursive: true });
   if (!existsSync(file)) writeJson(file, starter(basename(file).replace(/\.alp\.json$|\.json$/, ""))); // `studio <new-file>` starts a song instead of erroring
   const clients = new Set<ServerResponse>();
-  const send = (type: string, data: any) => { const msg = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`; for (const c of clients) c.write(msg); };
+  const sse = (type: string, data: any) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
+  const send = (type: string, data: any) => { const msg = sse(type, data); for (const c of clients) c.write(msg); };
   // The studio owns the project: its UI actions and every relayed MCP call go through this host (one undo stack, one set of runs).
   let host: ReturnType<typeof createHost>;
   try { host = createHost({ file, scope: "run", budget: null, notify: (t, d) => (t === "state" ? send("state", state()) : t === "tail" ? tail() : send(t, d)) }); }
   catch (e: any) { throw new Error(`cannot load ${o.file}: ${e.message}`); }
+  // audio_export: the newest connected tab renders the WAV, else headless Chromium; the bytes come back through POST /api/export/:id
+  const ex = exporter({ last: () => [...clients].at(-1) ?? null, send: (c: ServerResponse, t, d) => void c.write(sse(t, d)), url: () => host.studioUrl! });
+  host.render = ex.render;
   const withTakes = <T>(fn: (t: ReturnType<typeof openTakes>) => T): T => { const t = openTakes(dir); try { return fn(t); } finally { t.close(); } };
 
   const readEvents = (from: number) => {
@@ -99,6 +105,14 @@ export async function studio(o: { file: string; port?: number }) {
     let b = ""; req.on("data", (c) => { b += c; if (b.length > 1e6) req.destroy(); });
     req.on("end", () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error("body must be JSON")); } });
   });
+  /** a request body of raw bytes, refused past `max` */
+  const raw = (req: IncomingMessage, max: number) => new Promise<Buffer>((ok, bad) => {
+    const big = new Error(`upload larger than ${Math.round(max / 1e6)} MB`);
+    if (+(req.headers["content-length"] ?? 0) > max) return bad(big);
+    const cs: Buffer[] = []; let n = 0;
+    req.on("data", (c) => { n += c.length; if (n > max) { bad(big); req.destroy(); } else cs.push(c); });
+    req.on("end", () => ok(Buffer.concat(cs))); req.on("error", bad);
+  });
   const json = (res: ServerResponse, code: number, v: any) => { res.writeHead(code, { "content-type": "application/json" }); res.end(JSON.stringify(v)); };
 
   const routes: Record<string, (req: IncomingMessage, res: ServerResponse, m: string[]) => any> = {
@@ -117,6 +131,27 @@ export async function studio(o: { file: string; port?: number }) {
       json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes,
         channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain })) });
     },
+    // the browser's half of audio_export: ack = "I am rendering it" (no ack in 10 s and the host goes headless); the upload is the WAV, or JSON {error}
+    "POST /api/export/(\\w+)/ack": async (_q, res, m) => { const j = ex.jobs.get(m[1]); if (!j) return json(res, 404, { error: "unknown or expired export" }); j.acked(); json(res, 200, { ok: true }); },
+    "POST /api/export/(\\w+)": async (req, res, m) => {
+      const j = ex.jobs.get(m[1]);
+      if (!j) return json(res, 404, { error: "unknown or expired export" });
+      try {
+        if (req.headers["content-type"]?.startsWith("application/json")) { const a = await body(req); j.bad(new Error(`the browser could not render the audio: ${a.error ?? "unknown error"}`)); return json(res, 200, { ok: true }); }
+        const wav = await raw(req, MAX_WAV);
+        if (!(wavSeconds(wav) >= 0)) throw new Error("not a WAV file");
+        j.ok(wav); json(res, 200, { ok: true });
+      } catch (e: any) { j.bad(e); throw e; }
+    },
+    // the UI's Shift+⤓: the same path as the MCP tool, saved as an MP3 in the project folder
+    "POST /api/export": async (req, res) => { const a = await body(req); json(res, 200, await host.call("audio_export", { arrangement: a.arrangement, pattern: a.pattern, format: a.format, overwrite: a.overwrite }, { source: "studio" })); },
+    // "Connect a harness": write the project-local files for the chosen harness (never clobbering)
+    "POST /api/connect": async (req, res) => {
+      const { harness } = await body(req);
+      if (!HARNESSES.some((x) => x.id === harness)) throw new Error(`harness must be one of ${HARNESSES.map((x) => x.id).join(", ")}`);
+      json(res, 200, harnessFiles(dir, harness, basename(file)));
+    },
+    "GET /api/harnesses": (_q, res) => json(res, 200, HARNESSES),
     "GET /api/take/(\\w+)": (_q, res, m) => withTakes((t) => { const g = t.get(m[1]); g ? json(res, 200, { ...g, frames: t.frames(m[1]) }) : json(res, 404, { error: "unknown take" }); }),
     // browser actions: the same tools an MCP client calls, as source "studio". The UI's Play sends pace: "project"; without it a run is unpaced
     "POST /api/patch": async (req, res) => {
@@ -207,7 +242,7 @@ export async function studio(o: { file: string; port?: number }) {
     // only this origin: block DNS rebinding (Host) and cross-site POSTs (a page elsewhere could otherwise patch in a script and run it)
     const host = `127.0.0.1:${port}`, origin = req.headers.origin;
     if (![host, `localhost:${port}`].includes(req.headers.host ?? "") || (origin && origin !== `http://${req.headers.host}`)
-      || (req.method === "POST" && !String(req.headers["content-type"]).startsWith("application/json"))) return json(res, 403, { error: "forbidden" });
+      || (req.method === "POST" && !String(req.headers["content-type"]).startsWith("application/json") && !(req.headers["content-type"] === "audio/wav" && /^\/api\/export\/\w+$/.test(req.url ?? "")))) return json(res, 403, { error: "forbidden" });
     const url = new URL(req.url ?? "/", "http://x");
     for (const [k, h] of Object.entries(routes)) {
       const [method, pat] = k.split(" "), m = new RegExp(`^${pat}$`).exec(url.pathname);
