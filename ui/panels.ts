@@ -1,5 +1,5 @@
 // Playlist, Channel Rack, Piano Roll, Mixer and Tracer.
-import { $, chColor, curPattern, esc, fl, patch, ptr, S, set, setHint } from "./main.ts";
+import { $, chColor, curPattern, esc, fl, patch, ptr, S, set, setHint, waitFor, waiting } from "./main.ts";
 
 const BAR = 384, STEP = 24;
 /** tick count or "bar:step[:tick]" -> ticks (mirror of src/project.ts pos) */
@@ -149,14 +149,14 @@ export function drawPiano() {
     const r = rows.findIndex((k: any) => k.key === x.key);
     if (r < 0) continue;
     const nx = PR.label + (x.s / STEP) * col + 1, ny = PR.head + r * PR.row + 3, nw = Math.max(6, (x.len / STEP) * col - 2), nh = PR.row - 6;
-    const vs = voices.filter((v: any) => v.key === x.key), running = S.run.running && vs.some((v: any) => v.status === "running"), failed = vs.some((v: any) => v.status === "failed");
+    const vs = voices.filter((v: any) => v.key === x.key), wt = S.run.running && vs.some((v: any) => v.status === "waiting"), running = wt || (S.run.running && vs.some((v: any) => v.status === "running")), failed = vs.some((v: any) => v.status === "failed");
     g.globalAlpha = x.j < 0 ? 0.6 : 1;
     g.fillStyle = failed ? "#e2574c" : color; g.beginPath(); g.roundRect(nx, ny, nw, nh, 3); g.fill();
     if (running) { g.globalAlpha = 0.35 + 0.35 * Math.sin(t / 160); g.strokeStyle = "#fff"; g.lineWidth = 2; g.stroke(); }
     g.globalAlpha = 1; g.fillStyle = "#16130e"; g.font = "600 11px system-ui, sans-serif";
     g.save(); g.beginPath(); g.rect(nx, ny, nw, nh); g.clip();
     let bx = nx + 6; g.fillText(x.instr?.name ?? `key ${x.key}`, bx, ny + nh / 2); bx += g.measureText(x.instr?.name ?? "").width + 8;
-    for (const b of [x.n.when && `if ${x.n.when}`, x.n.pass && `pass ${x.n.pass}`, x.n.slide && "slide ↝", x.j < 0 && "step"].filter(Boolean) as string[]) {
+    for (const b of [wt && "⏳ harness", x.n.when && `if ${x.n.when}`, x.n.pass && `pass ${x.n.pass}`, x.n.slide && "slide ↝", x.j < 0 && "step"].filter(Boolean) as string[]) {
       g.font = "10px system-ui, sans-serif"; const bw = g.measureText(b).width + 10;
       g.fillStyle = "#0006"; g.beginPath(); g.roundRect(bx, ny + 5, bw, nh - 10, 7); g.fill();
       g.fillStyle = "#f4f1e8"; g.fillText(b, bx + 5, ny + nh / 2); bx += bw + 4;
@@ -187,8 +187,10 @@ export function mixer() {
 
 // ---- Tracer: voice Gantt by wall time + frame list ----
 export function tracer() {
-  const tk = S.latest;
-  if (!tk) return set($("tracer"), `<h2>Tracer<kbd>F10</kbd></h2><p class="empty-note">No takes yet. Run the song (Space) or let your harness call run_start.</p>`);
+  const tk = S.latest, wt = waiting();
+  // the live run is not in a take yet: say what it is waiting for
+  const bar = wt.length ? `<div class="waitbar" role="status">${esc(waitFor(wt[0]))}: ${wt.map((v: any) => `<b>${esc(chName(v.channel))}</b> ${esc((S.project.channels ?? []).find((c: any) => c.id === v.channel)?.keymap?.find((k: any) => k.key === v.key)?.name ?? "")} <span class="muted">(pass ${v.pass + 1}, voice ${v.voice})</span>`).join(" · ")}</div>` : "";
+  if (!tk) return set($("tracer"), `<h2>Tracer<kbd>F10</kbd></h2>${bar}<p class="empty-note">No takes yet. Run the song (Space) or let your harness call run_start.</p>`);
   const vs: any[] = tk.voices.filter((v: any) => v.startMs != null), end = Math.max(1, ...vs.map((v) => v.endMs ?? v.startMs));
   const gantt = vs.map((v) => `<button class="vrow" data-act="voice" data-v="${v.voice}" data-k="v:${v.voice}" aria-pressed="${S.voice === v.voice}" data-hint="${esc(chName(v.channel))} · pass ${v.pass + 1} · ${esc(v.status)} · ${(v.endMs ?? v.startMs) - v.startMs} ms · $${v.costUsd.toFixed(4)}${v.cached ? " · cached" : ""}. Click to filter frames">
     <span>${esc(chName(v.channel))} · pass ${v.pass + 1}</span><span class="vtrack"><i class="${esc(v.status)}" style="background:${esc(chColor(v.channel))};left:${(v.startMs / end) * 100}%;width:${(((v.endMs ?? v.startMs) - v.startMs) / end) * 100}%"></i></span></button>`).join("");
@@ -196,6 +198,6 @@ export function tracer() {
   const list = frames.map((f: any) => `<div class="frame"><header><span class="k ${esc(f.kind)}">${esc(f.kind)}</span><span class="trust ${esc(f.trust)}">${esc(f.trust ?? "trusted")}</span><span>${esc(chName(f.channel))} → ${esc(f.bus)} · pass ${f.pass + 1}${f.final ? " · final" : ""}</span></header>
     <p>${esc(f.text ?? "")}${f.json !== undefined ? `<span class="muted">${f.text ? "\n" : ""}${esc(JSON.stringify(f.json))}</span>` : ""}</p></div>`).join("");
   const r = tk.run;
-  set($("tracer"), `<h2>Tracer <span class="muted">take ${esc(r.id)} · ${esc(r.status)}${r.stopped ? `: ${esc(r.stopped)}` : ""} · ${r.passes} passes · ${vs.length} voices · $${r.costUsd.toFixed(4)} · ${end} ms</span><kbd>F10</kbd></h2>
+  set($("tracer"), `<h2>Tracer <span class="muted">take ${esc(r.id)} · ${esc(r.status)}${r.stopped ? `: ${esc(r.stopped)}` : ""} · ${r.passes} passes · ${vs.length} voices · $${r.costUsd.toFixed(4)} · ${end} ms</span><kbd>F10</kbd></h2>${bar}
     <div class="body"><div class="tr"><div class="gantt">${gantt}</div><div class="frames">${S.voice != null ? `<p class="muted">Frames of one voice. Click it again to show all.</p>` : ""}${list}</div></div></div>`);
 }

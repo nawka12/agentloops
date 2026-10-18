@@ -81,6 +81,8 @@ export async function studio(o: { file: string; port?: number }) {
       const errors = check(s.p);
       if (errors.length) return json(res, 400, { error: `fix the project first (${errors.length} errors)`, errors });
       if (a.cache != null && !["fresh", "prefer"].includes(a.cache)) return json(res, 400, { error: 'cache must be "fresh" or "prefer"' });
+      // ponytail: any harness channel blocks Play, even if the chosen pattern does not use it
+      if ((s.p.channels ?? []).some((c: any) => c.generator?.plugin === "harness")) return json(res, 400, { error: "harness channels need a run started from your harness over Studio MCP (run_start)" });
       const ac = new AbortController();
       const promise = loggedRender({ p: structuredClone(s.p), dir }, { pattern: a.pattern, arrangement: a.arrangement, cache: a.cache, signal: ac.signal }, "studio")
         .catch(() => {}).finally(() => { run = null; tail(); }); // tail now: don't wait on the watcher for run.end

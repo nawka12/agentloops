@@ -32,6 +32,9 @@ select { background: var(--well); border: 1px solid var(--line); border-radius: 
 .cost .bar i { display: block; height: 100%; background: var(--green); }
 .cost .bar i.hot { background: var(--red); }
 .errs.bad { color: var(--red); border-color: var(--red); } .errs.ok { color: var(--green); }
+.paused { color: #1c1308; background: var(--amber); border-radius: 3px; padding: 2px 8px; font-weight: 600; animation: pulse 1.4s ease-in-out infinite; }
+.waitbar { padding: 4px 8px; background: color-mix(in srgb, var(--amber) 16%, transparent); color: var(--amber); border-bottom: 1px solid #12171b; font-size: 12px; }
+.waitbar b { font-weight: 600; }
 .harness { color: var(--muted); } .harness.live { color: var(--teal); }
 #hint { padding: 3px 10px; background: #20272c; color: var(--muted); border-bottom: 1px solid #12171b; min-height: 22px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
@@ -64,7 +67,7 @@ select { background: var(--well); border: 1px solid var(--line); border-radius: 
 .chip.failed { background: var(--red) !important; color: #fff; }
 .playhead { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--amber); box-shadow: 0 0 6px var(--amber); pointer-events: none; }
 @keyframes pulse { 50% { filter: brightness(1.45); } }
-@media (prefers-reduced-motion: reduce) { .clip.running { animation: none; outline: 2px solid var(--amber); } }
+@media (prefers-reduced-motion: reduce) { .clip.running { animation: none; outline: 2px solid var(--amber); } .paused { animation: none; } }
 
 /* rack */
 .row { display: grid; grid-template-columns: 12px 110px 1fr auto; gap: 6px; align-items: center; padding: 4px 8px; border-bottom: 1px solid var(--well); }
@@ -119,6 +122,7 @@ select { background: var(--well); border: 1px solid var(--line); border-radius: 
 .feed li { padding: 5px 8px; border-bottom: 1px solid var(--well); font-size: 12px; }
 .feed li header { display: flex; gap: 6px; color: var(--muted); font-size: 11px; }
 .src { color: var(--muted); } .src.mcp { color: var(--teal); }
+.feed li.wait { color: var(--amber); }
 .feed li.end { color: var(--green); } .feed li.fail { color: var(--red); }
 
 /* errors popover */

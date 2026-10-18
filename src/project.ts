@@ -40,7 +40,7 @@ export const starter = (name = "My Song") => ({
 });
 
 export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
-const GENS = ["script", "llm.agent"];
+const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
@@ -97,6 +97,10 @@ export function validate(p: any): Err[] {
         if (typeof ref !== "string" || !srv || (rest.length && !rest.join("."))) err(tp, `Bad tool reference ${JSON.stringify(ref)}`, 'Use "<server>" or "<server>.<tool>"');
         else if (!(srv in servers)) err(tp, `Unknown tool server '${srv}'`, `Define it under the project-level "tools" (${Object.keys(servers).join(", ") || "none defined yet"})`);
       });
+    }
+    if (g?.plugin === "harness") {
+      if (g.params?.instructions != null && typeof g.params.instructions !== "string") err(at("generator", "params", "instructions"), "instructions must be a string", "A role or system text shown to the harness");
+      if (g.params?.timeoutMs != null && !(g.params.timeoutMs > 0)) err(at("generator", "params", "timeoutMs"), "timeoutMs must be a positive number", "Use e.g. 1800000 (30 minutes)");
     }
     if (g?.params?.maxTurns != null && !(Number.isInteger(g.params.maxTurns) && g.params.maxTurns > 0)) err(at("generator", "params", "maxTurns"), "maxTurns must be a positive integer", "Use e.g. 10");
     (c.keymap ?? []).forEach((k: any, j: number) => {

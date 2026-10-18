@@ -78,6 +78,19 @@ export function createMcpPool(servers: Record<string, any> = {}, cwd?: string) {
 }
 const resultText = (r: any) => (r.content ?? []).map((c: any) => (c.type === "text" ? c.text : JSON.stringify(c))).join("\n");
 
+// The outside harness (Claude Code over Studio MCP) is the agent: ask it through the run's bridge and wait for voice_reply.
+const noRetry = (e: Error) => Object.assign(e, { noRetry: true }); // a decline, timeout or missing bridge is not worth asking again
+async function harness(ctx: any): Promise<Raw[]> {
+  if (!ctx.harness) throw noRetry(new Error("harness channels need a run started from your harness over Studio MCP (run_start)"));
+  const { instructions, timeoutMs = 30 * 60_000 } = ctx.params;
+  const bad = Object.values<any>(ctx.inputs).some((i) => i.trust === "untrusted");
+  const inputs = Object.fromEntries(Object.entries<any>(ctx.inputs).map(([k, i]) => [k, { text: i.text, json: i.json, ...(bad ? { trust: i.trust } : {}) }]));
+  const req = { ...ctx.voice, prompt: ctx.prompt, inputs, schema: ctx.schema, instructions, history: ctx.history };
+  const sig = AbortSignal.any([ctx.signal, AbortSignal.timeout(timeoutMs)]);
+  try { return await ctx.harness(req, sig); }
+  catch (e: any) { throw noRetry(ctx.signal.aborted ? new Error("aborted") : sig.aborted ? new Error(`harness did not reply within ${timeoutMs} ms`) : e); }
+}
+
 let client: any;
 // Sampling params: Opus 5.5 / Sonnet 5.5 reject non-default temperature, so only set it if the project asks.
 // Tool loop: call the model, run its tool_use blocks through MCP, feed results back, until a final answer or maxTurns.
@@ -130,4 +143,4 @@ async function llm(ctx: any): Promise<Raw[]> {
   }
 }
 
-export const generators: Record<string, (ctx: any) => Promise<Raw[]>> = { script, "llm.agent": llm };
+export const generators: Record<string, (ctx: any) => Promise<Raw[]>> = { script, "llm.agent": llm, harness };

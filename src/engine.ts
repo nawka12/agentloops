@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 import { compile, BAR, STEP } from "./project.ts";
 import { evalBool, renderTemplate } from "./expr.ts";
-import { createMcpPool, generators } from "./generators.ts";
+import { createMcpPool, generators, type Raw } from "./generators.ts";
 import { celFrame, createMixer, RunStop } from "./mixer.ts";
 import { openTakes } from "./takes.ts";
 
@@ -13,7 +13,7 @@ const trunc = (s?: string, n = 160) => (s && s.length > n ? s.slice(0, n) + "…
 
 /** Progress event: barrier / pass / voice start+end, always with the pass and cost so far. */
 export type RunEvent = {
-  type: "barrier" | "pass" | "voice"; pass: number; costUsd: number; pos?: string; phase?: "start" | "end"; channel?: string; status?: string;
+  type: "barrier" | "pass" | "voice"; pass: number; costUsd: number; pos?: string; phase?: "start" | "end" | "wait" | "resume"; channel?: string; status?: string;
   voice?: number; key?: number; bus?: string; voiceCostUsd?: number; frames?: number; cached?: boolean; text?: string; error?: string; // voice details
 };
 export type RunOpts = {
@@ -21,6 +21,12 @@ export type RunOpts = {
   signal?: AbortSignal; // external abort: stops the run, the take is still saved
   onEvent?: (e: RunEvent) => void;
   runId?: string;
+  /** The outside harness answers `harness` channels: resolves with the voice's output, rejects when `signal` aborts (run stop, timeout). */
+  harness?: (req: HarnessRequest, signal: AbortSignal) => Promise<Raw[]>;
+};
+export type HarnessRequest = {
+  runId: string; voiceId: number; channel: string; channelName?: string; instruction?: string; prompt: string; inputs: Record<string, { text: string; json: unknown; trust?: string }>;
+  schema?: any; instructions?: string; history: { role: string; content: string }[]; pass: number; noteText?: string; attempt: number; feedback?: string;
 };
 const posStr = (t: number) => `${Math.floor(t / BAR) + 1}:${String(Math.floor((t % BAR) / STEP) + 1).padStart(2, "0")}`;
 
@@ -38,6 +44,14 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
   run.mcp = createMcpPool(p.tools, proj.dir); // servers connect lazily; closed when the run ends
   // ponytail: a throwing listener must not kill the run; errors are swallowed
   const emit = (e: Omit<RunEvent, "pass" | "costUsd">) => { try { opts.onEvent?.({ ...e, pass: run.pass, costUsd: run.costUsd }); } catch {} };
+  // wrap the bridge so the event log (and the studio) sees when a voice starts waiting for the harness and when it is answered
+  if (opts.harness) run.harness = async (req: HarnessRequest, signal: AbortSignal) => {
+    const v = run.voices[req.voiceId], ev = { type: "voice" as const, channel: req.channel, voice: req.voiceId, key: v?.n.key, bus: v?.ch.def.output ?? "master" };
+    emit({ ...ev, phase: "wait", text: trunc(req.prompt) });
+    const out = await opts.harness!(req, signal);
+    emit({ ...ev, phase: "resume" });
+    return out;
+  };
   run.ctx = (extra: object = {}) => ({
     loop: run.loop, run: { costUsd: run.costUsd, elapsedMs: Date.now() - run.start }, trigger: run.trigger, bus: mixer.view, ...extra,
   });
@@ -59,7 +73,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
       if ((i.select ?? "final") === "final") fs = fs.filter((f) => f.final);
       const w = i.window ?? "last";
       fs = w === "pass" ? fs.filter((f) => f.pass === run.pass) : w === "last" ? fs.slice(-1) : w === "run" ? fs : fs.slice(-w.lastN);
-      inputs[i.as ?? i.bus] = { text: fs.map(textOf).join("\n\n"), json: fs.at(-1)?.json ?? null, frames: fs.map(celFrame) };
+      inputs[i.as ?? i.bus] = { text: fs.map(textOf).join("\n\n"), json: fs.at(-1)?.json ?? null, frames: fs.map(celFrame), trust: fs.some((f) => f.trust === "untrusted") ? "untrusted" : "trusted" };
       used.push(...fs);
     }
     return { inputs, used };
@@ -79,7 +93,9 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     const gen = v.ch.def.generator;
     const raw = await generators[gen.plugin]({
       prompt: v.prompt, inputs: v.inputs, note: v.noteCtx, loop: v.loop, trigger: run.trigger, params: gen.params ?? {}, history: v.base,
-      schema: v.instr?.schema, signal: run.abort.signal, mcp: run.mcp,
+      schema: v.instr?.schema, signal: run.abort.signal, mcp: run.mcp, harness: run.harness,
+      voice: { runId: run.id, voiceId: v.seq, channel: v.ch.def.id, channelName: v.ch.def.name, instruction: v.instr?.name, pass: v.pass, noteText: v.n.text,
+        attempt: (v.ch.def.retries ?? 1) - v.attemptsLeft + 1, feedback: v.feedback },
       charge: (usd: number, tokens: number) => { v.costUsd += usd; run.costUsd += usd; run.tokens += tokens; },
       checkBudget: () => { if (run.budget != null && run.costUsd >= run.budget) throw new RunStop(`budget exceeded: $${run.costUsd.toFixed(4)} >= $${run.budget}`); },
     });
@@ -91,7 +107,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     for (;;) {
       try { return await generateOnce(v); }
       catch (e) {
-        if (e instanceof RunStop || v.attemptsLeft <= 0) throw e;
+        if (e instanceof RunStop || e.noRetry || v.attemptsLeft <= 0) throw e;
         v.attemptsLeft--;
         await backoff(v);
       }
@@ -139,9 +155,9 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     v.inputs = snap.inputs; v.inFrames = snap.used;
     v.prompt = renderTemplate(v.instr?.template ?? "{{note.text}}", { inputs: v.inputs, note: v.noteCtx, loop: v.loop, trigger: run.trigger, params: ch.def.generator.params ?? {} });
     const prev = ch.prev; ch.prev = v;
-    v.retry = async () => { // validator retry: re-run the source voice, counts against its retries
+    v.retry = async (feedback: string) => { // validator retry: re-run the source voice (a harness voice sees `feedback`), counts against its retries
       if (v.attemptsLeft <= 0) return null;
-      v.attemptsLeft--;
+      v.attemptsLeft--; v.feedback = feedback;
       await backoff(v);
       try { v.frames = await generateOnce(v); return v.frames.at(-1); } // the take records (and cache replays) the retried output
       catch (e) { if (e instanceof RunStop) throw e; return null; }

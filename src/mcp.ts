@@ -73,6 +73,7 @@ export function applyPatch(doc: any, ops: any) {
 const PLUGINS = [
   { kind: "generator", id: "script", summary: "Deterministic JS step (no model, no cost). Not sandboxed.", params: { code: "string, required: async function body. Receives ctx {prompt, inputs, note, loop, trigger, params, history}. Return a string, {text?, json?, meta?}, or an array of those (the last is the final frame)." } },
   { kind: "generator", id: "llm.agent", summary: "Claude via the Anthropic API, with a tool loop over MCP servers. Needs ANTHROPIC_API_KEY.", params: { model: "string, default claude-opus-5-5", system: "string", effort: "low|medium|high|xhigh|max, or a number 0..1", temperature: "number (leave unset on Opus 5.5 / Sonnet 5.5)", maxTokens: "integer, default 16000", maxTurns: "integer, default 10 (model calls per voice)", tools: 'string[] allow-list: "<server>" or "<server>.<tool>", servers defined in project-level "tools"' } },
+  { kind: "generator", id: "harness", summary: "The outside harness (you, over Studio MCP) is the agent: the run pauses at the note, run_start/voice_reply return status:waiting with the request, you do the work and answer with voice_reply. No API key, no cost. Only for runs started with run_start.", params: { instructions: "string: a role or system text shown to the harness with every request", timeoutMs: "number, default 1800000 (30 min): the voice fails if the harness has not replied by then" } },
   { kind: "processor", id: "fx.gate", summary: "Passes a frame only if the CEL condition is true.", params: { condition: "CEL string, e.g. side.last.json.approved", hold: '"none" (drop) | "pass" (hold until a sidechain frame makes it true, dropped at end of pass)' } },
   { kind: "processor", id: "fx.validator", summary: "Checks the final frame's json against a schema (type, required, properties).", params: { schema: "JSON Schema subset", onFail: '"drop" | "error" | "retry" (re-runs the source voice)' } },
   { kind: "processor", id: "fx.formatter", summary: "Rewrites frame text from a template.", params: { template: 'string, e.g. "{{frame.text}}"' } },
@@ -139,7 +140,39 @@ export async function serve(o: { project?: string; scope: keyof typeof RANK; bud
 
   // ---- runs ----
   const runs = new Map<string, any>();
-  const runView = (r: any) => ({ runId: r.id, status: r.status, pass: r.pass, pos: r.pos, costUsd: r.costUsd, ...(r.status === "running" ? { elapsedMs: Date.now() - r.started } : {}), ...(r.result ?? {}), ...(r.error ? { error: r.error } : {}) });
+  const runView = (r: any) => {
+    const waiting = r.status === "running" && r.waiting.size ? [...r.waiting.values()].map((w: any) => w.req) : null;
+    return { runId: r.id, status: waiting ? "waiting" : r.status, pass: r.pass, pos: r.pos, costUsd: r.costUsd, ...(waiting ? { waiting } : {}), ...(r.status === "running" ? { elapsedMs: Date.now() - r.started } : {}), ...(r.result ?? {}), ...(r.error ? { error: r.error } : {}) };
+  };
+  /** The harness bridge for one run: a request waits in r.waiting until voice_reply answers it or `signal` aborts (run_stop, timeout). */
+  const bridge = (r: any) => (req: any, signal: AbortSignal) => new Promise<any[]>((resolve, reject) => {
+    const w = { req, resolve, reject }, drop = () => { if (r.waiting.get(req.voiceId) === w) r.waiting.delete(req.voiceId); reject(signal.reason ?? new Error("aborted")); };
+    if (signal.aborted) return drop();
+    signal.addEventListener("abort", drop, { once: true });
+    r.waiting.set(req.voiceId, w); r.wakers.forEach((f: any) => f());
+  });
+  /** Block until the run ends or is waiting on the harness; progress notifications go to this call. A cancelled call returns at once (the run goes on). */
+  async function block(r: any, extra: any, settle: boolean) {
+    const token = extra._meta?.progressToken;
+    let n = 0, wake: any;
+    const notify = token == null ? null : (e: any) => extra.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: ++n, message: `${e.type} · bar:step ${r.pos ?? "-"} · pass ${e.pass} · $${e.costUsd.toFixed(4)}` } }).catch(() => {});
+    r.notify = notify;
+    const cancelled = new Promise((ok) => extra.signal.addEventListener("abort", ok, { once: true }));
+    try {
+      while (r.status === "running" && !extra.signal.aborted) {
+        if (r.waiting.size) {
+          if (settle) await Promise.race([new Promise((ok) => setTimeout(ok, 50)), r.promise, cancelled]); // ponytail: 50 ms settle so a chord's requests arrive in one list; a note that starts later comes with the next reply
+          return;
+        }
+        await Promise.race([r.promise, new Promise((ok) => r.wakers.add((wake = ok))), cancelled]);
+        r.wakers.delete(wake);
+      }
+    } finally {
+      // only clear what this call owns: a cancelled call's cleanup can run after the next call has started waiting
+      r.wakers.delete(wake);
+      if (r.notify === notify) r.notify = null;
+    }
+  }
   const findRun = (id?: string) => { const r = id ? runs.get(id) : [...runs.values()].at(-1); if (!r) throw new Error(id ? `unknown run '${id}'` : "no runs started in this session"); return r; };
   const withTakes = <T>(fn: (t: ReturnType<typeof openTakes>) => T): T => { const t = openTakes(dirname(cur().file)); try { return fn(t); } finally { t.close(); } };
 
@@ -189,44 +222,71 @@ export async function serve(o: { project?: string; scope: keyof typeof RANK; bud
     // run
     {
       name: "run_start", scope: "run",
-      description: "Play an arrangement (default: the first) or loop one pattern. Spends money if channels use llm.agent: budget is capped by the server's --budget. wait:true (default) blocks and sends progress notifications at each barrier and pass; cancelling the call stops the run. wait:false returns a runId for run_status / run_stop. Refuses to start while project_validate reports errors.",
+      description: "Play an arrangement (default: the first) or loop one pattern. Spends money if channels use llm.agent: budget is capped by the server's --budget. wait:true (default) blocks and sends progress notifications at each barrier and pass; cancelling the call stops the run. wait:false returns a runId for run_status / run_stop. If the project has harness channels, YOU are their agent: the call returns {status: \"waiting\", waiting: [requests]} as soon as the run needs you (do the work, answer with voice_reply), cancelling it leaves the run going, and wait:false is resumed with voice_reply({replies: []}) or run_status. Refuses to start while project_validate reports errors.",
       inputSchema: obj({ arrangement: S, pattern: S, input: {}, cache: S, budget: N, wait: B }),
       run: async (a: any, extra: any) => {
         const s = cur(), errors = check(s.p);
         if (errors.length) throw new Error(`fix the project first (${errors.length} errors):\n${JSON.stringify(errors, null, 2)}`);
         if (a.cache != null && !["fresh", "prefer"].includes(a.cache)) throw new Error('cache must be "fresh" or "prefer"');
-        const wait = a.wait !== false, token = extra._meta?.progressToken;
+        const wait = a.wait !== false;
         const budget = Math.min(...[a.budget, s.p.budgets?.runUsd, cap].filter((x) => x != null));
-        const r: any = { id: randomUUID().slice(0, 8), status: "running", ac: new AbortController(), pass: 0, costUsd: 0, pos: null, started: Date.now() };
-        let n = 0;
+        const r: any = { id: randomUUID().slice(0, 8), status: "running", ac: new AbortController(), pass: 0, costUsd: 0, pos: null, started: Date.now(), waiting: new Map<number, any>(), wakers: new Set<() => void>(),
+          bridged: (s.p.channels ?? []).some((c: any) => c.generator?.plugin === "harness") };
         runs.set(r.id, r);
         r.promise = loggedRender({ p: structuredClone(s.p), dir: dirname(s.file) }, {
-          arrangement: a.arrangement, pattern: a.pattern, input: a.input, cache: a.cache, budget, signal: r.ac.signal, runId: r.id,
+          arrangement: a.arrangement, pattern: a.pattern, input: a.input, cache: a.cache, budget, signal: r.ac.signal, runId: r.id, harness: bridge(r),
           onEvent: (e) => {
             r.pass = e.pass; r.costUsd = e.costUsd; if (e.pos) r.pos = e.pos;
-            if (wait && token != null && e.type !== "voice")
-              extra.sendNotification({ method: "notifications/progress", params: { progressToken: token, progress: ++n, message: `${e.type} · bar:step ${r.pos ?? "-"} · pass ${e.pass} · $${e.costUsd.toFixed(4)}` } }).catch(() => {});
+            if (e.type !== "voice") r.notify?.(e);
           },
         }, source()).then(
           (x) => { r.status = x.stopped ? "stopped" : "done"; r.result = { passes: x.passes, stopped: x.stopped, voicesRun: x.voicesRun, cacheHits: x.cacheHits, skipped: x.skipped, costUsd: x.costUsd, master: x.master.map((f: any) => ({ text: f.text, json: f.json })) }; },
           (e) => { r.status = "failed"; r.error = e.message; },
         );
         if (!wait) return text({ runId: r.id, status: "running" });
-        const onAbort = () => r.ac.abort(); // client cancelled the call
+        const onAbort = () => { if (!r.bridged) r.ac.abort(); }; // client cancelled the call (a harness run is left going: resume it with voice_reply)
         extra.signal.addEventListener("abort", onAbort);
-        await r.promise;
-        extra.signal.removeEventListener("abort", onAbort);
+        try { await block(r, extra, true); if (!r.bridged) await r.promise; } finally { extra.signal.removeEventListener("abort", onAbort); }
         return text(runView(r));
       },
     },
     { name: "run_status", scope: "run", description: "Status of a run started in this session (default: the latest): position, pass, cost so far, and the result once finished.", inputSchema: obj({ runId: S }), run: (a: any) => text(runView(findRun(a.runId))) },
-    { name: "run_stop", scope: "run", description: "Stop a running run (default: the latest). The take is still saved.", inputSchema: obj({ runId: S }), run: async (a: any) => { const r = findRun(a.runId); r.ac.abort(); await r.promise; return text(runView(r)); } },
+    {
+      name: "voice_reply", scope: "run",
+      description: 'Answer the voices a run is waiting on (run_start / voice_reply returned status:"waiting"). replies: [{voiceId, text?, json?, error?}]: text or json is the voice\'s output (json must match the request\'s schema when it has one; a mismatch is rejected and nothing is applied), error declines (the voice fails through its channel\'s onFail). Then, like run_start, it returns the next {status:"waiting", waiting:[…]} (at once if other voices are still unanswered) or the final result. replies:[] just waits again. Keep calling until status is done, stopped or failed.',
+      inputSchema: obj({ runId: S, replies: { type: "array" } }, ["replies"]),
+      run: async (a: any, extra: any) => {
+        const r = findRun(a.runId), who = server.getClientVersion()?.name ?? "unknown", seen = new Set<number>();
+        const pending = () => `waiting voices: [${[...r.waiting.keys()].join(", ")}]`;
+        for (const x of a.replies) { // check everything first: a bad reply applies nothing
+          const w = r.waiting.get(x?.voiceId);
+          if (!w) throw new Error(`voice ${JSON.stringify(x?.voiceId)} is not waiting for a reply (unknown or already answered); ${pending()}`);
+          if (seen.has(x.voiceId)) throw new Error(`voice ${x.voiceId} appears twice in replies`);
+          seen.add(x.voiceId);
+          if (x.error != null) continue;
+          if (x.text === undefined && x.json === undefined) throw new Error(`reply for voice ${x.voiceId} needs text, json or error`);
+          if (w.req.schema) {
+            if (x.json === undefined) throw new Error(`voice ${x.voiceId} has an output schema: reply with json matching ${JSON.stringify(w.req.schema)}`);
+            const bad = checkSchema(w.req.schema, x.json);
+            if (bad) throw new Error(`voice ${x.voiceId}: json does not match the schema (${bad}); nothing was applied, reply again`);
+          }
+        }
+        for (const x of a.replies) {
+          const w = r.waiting.get(x.voiceId); r.waiting.delete(x.voiceId);
+          if (x.error != null) w.reject(new Error(`harness declined: ${x.error}`));
+          else w.resolve([{ text: x.text ?? JSON.stringify(x.json), json: x.json, meta: { harness: who } }]);
+        }
+        if (!r.waiting.size || !a.replies.length) await block(r, extra, true);
+        return text(runView(r));
+      },
+    },
+    { name: "run_stop", scope: "run", description: "Stop a running run (default: the latest), also while it waits on the harness (the pending requests are dropped). The take is still saved.", inputSchema: obj({ runId: S }), run: async (a: any) => { const r = findRun(a.runId); r.ac.abort(); await r.promise; return text(runView(r)); } },
   ];
   const allowed = tools.filter((t) => RANK[t.scope as keyof typeof RANK] <= RANK[o.scope]);
 
   const server = new Server({ name: "agentloops", version: "0.0.1" }, {
     capabilities: { tools: {}, resources: {} },
-    instructions: "Read the agentloops://manual resource first. Edits are applied and saved even when the project is invalid: read the returned errors (path, message, fix) and keep going.",
+    instructions: "Read the agentloops://manual resource first. If run_start or voice_reply returns status:waiting you are the agent for those voices: see \"You are the agent\" in the manual. Edits are applied and saved even when the project is invalid: read the returned errors (path, message, fix) and keep going.",
   });
   const source = () => `mcp:${server.getClientVersion()?.name ?? "unknown"}`;
   server.setRequestHandler(ListToolsRequestSchema, async () => ({ tools: allowed.map(({ name, description, inputSchema }) => ({ name, description, inputSchema })) }));

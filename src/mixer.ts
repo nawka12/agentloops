@@ -63,7 +63,7 @@ export function createMixer(p: any, run: any) {
         const bad = checkSchema(s.params.schema, cur.json);
         if (!bad) return [cur];
         if (mode === "drop") return [];
-        if (mode === "retry") { const nf = await cur._v?.retry(); if (nf) { cur = nf; continue; } }
+        if (mode === "retry") { const nf = await cur._v?.retry(`rejected by the validator: ${bad}`); if (nf) { cur = nf; continue; } }
         await cur._v?.fail(new Error(`validator: ${bad}`)); // throws RunStop unless the channel has onFail: skip
         return [];
       }

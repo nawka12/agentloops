@@ -235,6 +235,7 @@ type InputSpec = {
 | `llm.agent` | Model, system prompt, tools (MCP), effort, temperature, max tokens, output schema. Runs a tool loop until it produces a final answer. |
 | `script` | A JS/TS or Python function (sandboxed), for deterministic steps. |
 | `human` | Posts a card to the **Inbox** panel and waits for an operator's reply, with a timeout. |
+| `harness` | The outside harness driving the run (Claude Code over Studio MCP) is the agent. The run pauses, the harness does the work under its own login, and it replies with `voice_reply` (§10.4). No API key and no per-voice cost. It only works in runs started over Studio MCP. |
 | `remote.agent` | A remote agent over HTTP/A2A. |
 | `replay` | Plays back recorded frames from a take. Used for mocking and testing (the "sampler"). |
 | `project` | Nests another `.alp.json` as an instrument. Its Master becomes this channel's output. |
@@ -623,7 +624,7 @@ AgentLoops also *provides* MCP servers, on top of consuming them as tools. There
 |---|---|
 | Project | `project_create`, `project_open`, `project_get` (full JSON or a summary), `project_validate` |
 | Edit | `project_patch` (RFC 6902 JSON Patch, validated and applied atomically, which covers any field), `channel_upsert`, `instruction_upsert`, `pattern_edit` (steps and notes), `clip_place`, `bus_upsert`, `processor_insert`, `route_set`, `automation_set`, `undo` |
-| Run | `run_start` (arrangement or pattern, cache policy, budget, input), `run_status`, `run_stop` |
+| Run | `run_start` (arrangement or pattern, cache policy, budget, input), `voice_reply` (answers `harness` voices), `run_status`, `run_stop` |
 | Inspect | `score_view` (§10.4), `take_list`, `take_get` (a summary, or frames filtered by bus, channel or kind), `take_compare`, `meter_get`, `bounce` |
 | Library | `plugin_search`, `preset_search` |
 | Inbox | `inbox_list`, `inbox_reply` (answers `human` voices only, §12) |
@@ -662,6 +663,14 @@ Every run starts a built-in MCP server, `agentloops.runtime`. A channel adds it 
 This is the reason the MCP servers exist. A whole song can be made start to finish from Claude Code or any other AI harness: channels, patterns, arrangement, mixer and tests. The user describes what they want, the harness builds and runs it, and the studio is optional, for watching and fine-tuning.
 
 **Outside harness first, built-in assistant second.** The optional Assistant is a harness bundled with the app. It calls the same Studio MCP tools, under the same scopes and budgets. The rule that keeps the MCP surface complete: if the Assistant can do something, an outside harness can too, and nothing gets a private shortcut.
+
+**The harness as the performer.** A channel whose generator is `harness` is played by the harness itself:
+
+1. When the playhead reaches its note, `run_start` returns `status: "waiting"` with one request per waiting voice. A request carries the rendered prompt, the inputs (marked untrusted where they are), the output schema, the conversation history, and, on a validator retry, `feedback` explaining what to fix. A brief settle window lets every note of a chord arrive in one list.
+2. The harness does the work, using subagents for parallel voices if it likes. Then it calls `voice_reply` with one entry per voice: `text`, `json` (checked against the schema immediately), or `error` to decline.
+3. `voice_reply` resumes the run, and returns the next `waiting` list or the final result. The harness loops until the status is `done`.
+
+Answers become ordinary frames, so validators, gates, loops, takes and the cache work unchanged. With `cache: "prefer"`, answers that already exist replay without asking again. Because the harness isn't blocked inside `run_start` while the run waits on it, the protocol can't deadlock. The cost is your own harness usage, so no API key is needed and AgentLoops never handles a subscription login. `render`, `serve` and studio-started runs have no harness to ask, so they fail harness voices with a clear message. Use `llm.agent` for those.
 
 Both of the following paths can do everything:
 
@@ -826,7 +835,7 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 - Agent Rack with Step Sequencer, and Piano Roll (instructions, notes, effort/temp lanes, chords, slide, text)
 - Barrier clock, Pattern mode with `max` / `until`, note conditions (`when`, `pass`)
 - Mixer: buses, sends, sidechain, aligned join, and processors Compressor, Gate, Validator, Limiter, Formatter
-- Generators: `llm.agent` (Anthropic + OpenAI-compatible, MCP tools) and `script`
+- Generators: `llm.agent` (Anthropic + OpenAI-compatible, MCP tools), `script`, and `harness` (the outside harness plays the channel, §10.4)
 - Takes with cache replay, a basic Tracer (frame list plus voice timeline), the cost meter and run budget
 - `agentloops studio`, `render`, `validate`
 - Studio MCP (§10.1), `score`, `validate --json` and `init --harness` (§10.4). Studio MCP is a thin adapter over the engine protocol, so harnesses can make songs from day one.

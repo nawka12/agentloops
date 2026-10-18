@@ -41,7 +41,7 @@ function applyEvent(e: any) {
   else if (["barrier", "pass", "voice"].includes(e.type)) {
     r.pass = e.pass; r.cost = e.costUsd; if (e.pos) r.pos = e.pos;
     if (e.type === "voice") {
-      r.voices.set(e.voice, { ...r.voices.get(e.voice), ...e, status: e.phase === "start" ? "running" : e.status });
+      r.voices.set(e.voice, { ...r.voices.get(e.voice), ...e, status: ({ start: "running", wait: "waiting", resume: "running" } as any)[e.phase] ?? e.status });
       if (e.phase === "end") {
         const b = (r.buses[e.bus] ??= { frames: 0, cost: 0, errors: 0 });
         b.frames += e.frames ?? 0; b.cost += e.voiceCostUsd ?? 0; if (e.status === "failed") b.errors++;
@@ -92,6 +92,9 @@ function setState(st: any, live: boolean) {
 const fmtT = (ms: number) => { if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`; const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
 const ago = (at: number) => { const s = Math.round((Date.now() - at) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const NAMES: Record<string, string> = { "claude-code": "Claude Code", "claude-ai": "Claude" };
+/** Voices of the running run that wait for the outside harness to answer (a harness channel's note), and who is expected to. */
+export const waiting = (): any[] => (S.run.running ? [...S.run.voices.values()].filter((v: any) => v.status === "waiting") : []);
+export const waitFor = (v: any) => { const c = String(v?.source ?? "").slice(4); return `⏳ waiting for ${NAMES[c] ?? (c || "the harness")}`; };
 export const who = (src: string) => src?.startsWith("mcp:") ? `via MCP · ${NAMES[src.slice(4)] ?? src.slice(4)}` : src === "cli" ? "CLI" : src ?? "";
 
 function toolbarCtl() {
@@ -111,6 +114,7 @@ function toolbarStatus() {
   const h = S.lastHarness, live = h && Date.now() - h.at < 600_000;
   const el = (r.end ?? (r.running ? Date.now() : r.start)) - r.start;
   set($("tb-status"), `
+    ${waiting().length ? `<span class="paused" data-hint="The run is paused until the harness answers with voice_reply (it asks over MCP). Stop (Space) ends the run.">${esc(waitFor(waiting()[0]))}${waiting().length > 1 ? ` · ${waiting().length} voices` : ""}</span>` : ""}
     <span class="lcd" data-hint="Position bar:step of the last barrier, and pass">${esc(r.pos ?? "1:01")}<small>pass ${r.pass + 1}</small></span>
     <span class="lcd" data-hint="Elapsed wall time of the ${r.running ? "current" : "last"} run">${fmtT(r.start ? el : 0)}</span>
     <span class="cost" data-hint="Cost of the ${r.running ? "current" : "last"} run against the run budget">$${r.cost.toFixed(2)} / $${budget != null ? Number(budget).toFixed(2) : "—"}<span class="bar"><i class="${pct > 80 ? "hot" : ""}" style="width:${pct}%"></i></span></span>
@@ -119,15 +123,18 @@ function toolbarStatus() {
   const e = $("errors");
   if (!e.hidden) set(e, S.errors.length ? `<ul>${S.errors.map((x: any) => `<li><code>${esc(x.path || "/")}</code> ${esc(x.message)}<br><span class="muted">fix: ${esc(x.fix)}</span></li>`).join("")}</ul>` : `<p class="muted">No validation errors.</p>`);
 }
+const still = (e: any) => e.runId === S.run.id && waiting().some((v: any) => v.voice === e.voice);
+const chLabel = (e: any) => { const c = (S.project?.channels ?? []).find((c: any) => c.id === e.channel); return `${c?.name ?? e.channel} · ${(c?.keymap ?? []).find((k: any) => k.key === e.key)?.name ?? `key ${e.key}`}`; };
 function feed() {
-  const items = S.events.filter((e: any) => e.type === "edit" || e.type.startsWith("run.") || (e.type === "voice" && e.status === "failed")).slice(-60).reverse();
+  const items = S.events.filter((e: any) => e.type === "edit" || e.type.startsWith("run.") || (e.type === "voice" && (e.status === "failed" || e.phase === "wait"))).slice(-60).reverse();
   set($("feed"), `<h2>Activity <span class="muted">${items.length}</span></h2><div class="body"><ul class="feed">${items.map((e: any) => {
     const t = new Date(e.at).toLocaleTimeString([], { hour12: false });
     const what = e.type === "edit" ? `${esc(e.tool)} <span class="muted">${esc(e.summary)}</span>`
       : e.type === "run.start" ? `Run started · ${esc(e.pattern ? `pattern ${e.pattern}` : "song")}`
       : e.type === "run.end" ? (e.error ? `Run failed: ${esc(e.error)}` : `Run done · ${e.summary.passes} passes · ${e.summary.voicesRun} voices · $${e.summary.costUsd.toFixed(4)}${e.summary.stopped ? ` · stopped: ${esc(e.summary.stopped)}` : ""}`)
+      : e.phase === "wait" ? `${still(e) ? esc(waitFor(e)) : `Asked ${esc(who(e.source).replace("via MCP · ", ""))}`} · ${esc(chLabel(e))} <span class="muted">${esc(e.text)}</span>`
       : `Voice failed: ${esc(e.channel)} · ${esc(e.error)}`;
-    const cls = e.type === "run.end" ? (e.error || e.summary?.stopped ? "fail" : "end") : e.type === "voice" ? "fail" : "";
+    const cls = e.type === "run.end" ? (e.error || e.summary?.stopped ? "fail" : "end") : e.phase === "wait" ? (still(e) ? "wait" : "") : e.type === "voice" ? "fail" : "";
     return `<li class="${cls}"><header><span class="src${String(e.source).startsWith("mcp:") ? " mcp" : ""}">${esc(who(e.source))}</span><span>${t}</span></header>${what}</li>`;
   }).join("") || `<li class="muted">Nothing yet. Edits and runs from the studio, the CLI and MCP clients land here.</li>`}</ul></div>`);
 }
