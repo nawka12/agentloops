@@ -42,6 +42,8 @@ export const starter = (name = "My Song") => ({
 export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
 const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
+// channel `sound` (sonification instrument); keep in sync with SOUNDS in ui/sound.ts
+const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums"];
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
 
@@ -115,6 +117,8 @@ export function validate(p: any): Err[] {
     });
     if (c.output != null && !busIds.has(c.output)) err(at("output"), `Unknown output bus '${c.output}'`, `Use one of: ${[...busIds].join(", ")} (or omit for master)`);
     for (const k of ["mute", "solo"]) if (c[k] != null && typeof c[k] !== "boolean") err(at(k), `${k} must be true or false`, `Use "${k}": true, or remove it`);
+    if (c.sound != null && !SOUNDS.includes(c.sound)) err(at("sound"), `unknown sound "${c.sound}"`, `Use one of: ${SOUNDS.join(", ")}`);
+    if (c.gain != null && !(typeof c.gain === "number" && c.gain >= 0 && c.gain <= 1)) err(at("gain"), "gain must be a number from 0 to 1", 'Use e.g. "gain": 0.8');
     if (c.polyphony != null && !(Number.isInteger(c.polyphony) && c.polyphony > 0)) err(at("polyphony"), "polyphony must be a positive integer", "Use e.g. 4");
     if (c.retries != null && !(Number.isInteger(c.retries) && c.retries >= 0)) err(at("retries"), "retries must be an integer >= 0", "Use e.g. 1");
     if (c.onFail != null && !["stop", "skip"].includes(c.onFail)) err(at("onFail"), `onFail ${JSON.stringify(c.onFail)} is not supported yet`, 'Use "stop" or "skip"');

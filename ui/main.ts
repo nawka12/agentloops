@@ -4,7 +4,22 @@ import { h, render } from "preact";
 import htm from "htm";
 import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
 import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
-import { blip, chime, click, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
+import { blip, chime, click, renderWav, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
+
+/** Ctrl+Alt+R: bounce the song (SONG) or current pattern (PAT) to a WAV, offline, and download it */
+export async function exportAudio() {
+  if (S.exporting) return;
+  S.exporting = true; paint();
+  try {
+    const q = S.mode === "pat" ? `pattern=${encodeURIComponent(curPattern()?.id ?? "")}` : `arrangement=${encodeURIComponent(S.project.arrangements?.[0]?.id ?? "")}`;
+    const score = await (await fetch(`/api/score?${q}`)).json();
+    if (score.error) throw new Error(score.error);
+    const url = URL.createObjectURL(new Blob([await renderWav({ ...score, bpm: bpm() })], { type: "audio/wav" })), a = document.createElement("a");
+    a.href = url; a.download = `${(score.name ?? "song").replace(/[^\w.-]+/g, "-")}.wav`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    S.notice = `Exported ${a.download}`;
+  } catch (e: any) { S.notice = `Export failed: ${e.message}`; }
+  finally { S.exporting = false; paint(); }
+}
 
 export const html = htm.bind(h);
 export const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
@@ -89,10 +104,13 @@ function applyEvent(e: any, live: boolean) {
   if (e.type === "frame" && e.bus === "master" && e.final && hist) hist.master.push(e);
   if (live && e.runId === r.id) { // sonification: only for what happens now, never for the replayed log
     const id = `${e.runId}:${e.voice}`;
-    if (e.type === "voice" && e.phase === "start" && audible(e.channel)) voiceStart(id, e.key, plugin(e.channel));
+    if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
+      const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, dur: ((e.len ?? 0) * 60) / bpm() / 96 });
+    }
     if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel));
     if (e.type === "frame" && e.kind === "error") blip();
-    if (e.type === "frame" && e.bus === "master" && e.final && e.kind !== "error") chime();
+    if (e.type === "frame" && e.bus === "master" && e.final && e.kind !== "error" && !(r as any).chimed) { (r as any).chimed = true; chime(); } // once per run: the song landed
     if (e.type === "run.end") stopAll();
   }
   if (e.type === "run.start") return;
@@ -278,6 +296,7 @@ function Toolbar() {
         onWheel=${(e: WheelEvent) => { e.preventDefault(); setVol(sound.vol + (e.deltaY < 0 ? 0.05 : -0.05)); paint(); }}
         data-hint=${`Sound ${sound.on ? "on" : "off"}, volume ${Math.round(sound.vol * 100)}%. Click to toggle, scroll to change the volume. Each voice is a tone at its note's key while the agent runs; Master frames chime, errors blip.`}>${sound.on ? "♪" : "♪̸"}<small>${Math.round(sound.vol * 100)}</small></button>
       <button class=${`metro${sound.metro ? " on" : ""}`} aria-pressed=${sound.metro} aria-label="Metronome" onClick=${() => { setMetro(!sound.metro); paint(); }} data-hint="Metronome: a click on each beat while playing, accent on the bar">♩</button>
+      <button class="metro" aria-label="Export audio" onClick=${exportAudio} disabled=${!!S.exporting} data-hint=${`Export audio: bounce the ${S.mode === "pat" ? "current pattern" : "song"} to a WAV, offline, with the same instruments (Ctrl+Alt+R)`}>${S.exporting ? "…" : "⤓"}</button>
     </div>
     <div class="grp">
       <button onClick=${() => post("/api/undo")} disabled=${!S.project} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶</button>
@@ -429,6 +448,7 @@ document.addEventListener("keydown", (ev) => {
   if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return void post("/api/undo"); }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
+  else if ((ev.key === "r" || ev.key === "R") && ev.ctrlKey && ev.altKey) { ev.preventDefault(); exportAudio(); }
   else if (ev.key === "l" || ev.key === "L") { S.mode = S.mode === "pat" ? "song" : "pat"; paint(); }
   else if (ev.key === "Escape") { Object.assign(S, { showErrors: false, menu: null, picker: null, slotEd: null, pop2: null }); paint(); }
 });

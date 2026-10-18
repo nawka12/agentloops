@@ -1,0 +1,4910 @@
+{
+  "format": "agentloops/1",
+  "name": "Kawaii Bass (royal road)",
+  "seed": 7,
+  "clock": {
+    "bpm": 160
+  },
+  "channels": [
+    {
+      "id": "drums",
+      "name": "Drums",
+      "color": "#ffd166",
+      "sound": "drums",
+      "gain": 0.9,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 36,
+          "name": "Kick",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 38,
+          "name": "Snare",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 39,
+          "name": "Clap",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 42,
+          "name": "Hat",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 46,
+          "name": "Open hat",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 49,
+          "name": "Crash",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "drums",
+      "polyphony": 8
+    },
+    {
+      "id": "chords",
+      "name": "Supersaw",
+      "color": "#ff7ac6",
+      "sound": "supersaw",
+      "gain": 0.85,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 55,
+          "name": "G4",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 57,
+          "name": "A4",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 59,
+          "name": "B4",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 60,
+          "name": "C5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 62,
+          "name": "D5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 64,
+          "name": "E5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 66,
+          "name": "F#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 67,
+          "name": "G5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 69,
+          "name": "A5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 71,
+          "name": "B5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 74,
+          "name": "D6",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "chords",
+      "polyphony": 8
+    },
+    {
+      "id": "bass",
+      "name": "Sub",
+      "color": "#8e7dff",
+      "sound": "sub",
+      "gain": 0.9,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 36,
+          "name": "C3",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 40,
+          "name": "E3",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 41,
+          "name": "F3",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 43,
+          "name": "G3",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 45,
+          "name": "A3",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "bass",
+      "polyphony": 8
+    },
+    {
+      "id": "pluck",
+      "name": "Pluck arp",
+      "color": "#9cf6c8",
+      "sound": "pluck",
+      "gain": 0.6,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 67,
+          "name": "G5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 69,
+          "name": "A5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 71,
+          "name": "B5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 72,
+          "name": "C6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 74,
+          "name": "D6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 76,
+          "name": "E6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 78,
+          "name": "F#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 79,
+          "name": "G6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 81,
+          "name": "A6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 83,
+          "name": "B6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 84,
+          "name": "C7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 86,
+          "name": "D7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 88,
+          "name": "E7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 90,
+          "name": "F#7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 91,
+          "name": "G7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 93,
+          "name": "A7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 95,
+          "name": "B7",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "pluck",
+      "polyphony": 8
+    },
+    {
+      "id": "bell",
+      "name": "Bell hook",
+      "color": "#7ee0ff",
+      "sound": "bell",
+      "gain": 0.8,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return `♪ ${ctx.note.text}`;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 76,
+          "name": "E6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 79,
+          "name": "G6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 81,
+          "name": "A6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 83,
+          "name": "B6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 84,
+          "name": "C7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 86,
+          "name": "D7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 88,
+          "name": "E7",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "bell",
+      "polyphony": 8
+    },
+    {
+      "id": "riser",
+      "name": "Riser",
+      "color": "#c9b6ff",
+      "sound": "chip",
+      "gain": 0.35,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 60,
+          "name": "C5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 61,
+          "name": "C#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 62,
+          "name": "D5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 63,
+          "name": "D#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 64,
+          "name": "E5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 65,
+          "name": "F5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 66,
+          "name": "F#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 67,
+          "name": "G5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 68,
+          "name": "G#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 69,
+          "name": "A5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 70,
+          "name": "A#5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 71,
+          "name": "B5",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 72,
+          "name": "C6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 73,
+          "name": "C#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 74,
+          "name": "D6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 75,
+          "name": "D#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 76,
+          "name": "E6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 77,
+          "name": "F6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 78,
+          "name": "F#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 79,
+          "name": "G6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 80,
+          "name": "G#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 81,
+          "name": "A6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 82,
+          "name": "A#6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 83,
+          "name": "B6",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "riser",
+      "polyphony": 8
+    },
+    {
+      "id": "vocal",
+      "name": "Vocal chop",
+      "color": "#ff9f80",
+      "sound": "chip",
+      "gain": 0.7,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "return ctx.note.text;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 76,
+          "name": "E6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 79,
+          "name": "G6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 81,
+          "name": "A6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 83,
+          "name": "B6",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 84,
+          "name": "C7",
+          "template": "{{note.text}}"
+        },
+        {
+          "key": 86,
+          "name": "D7",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [],
+      "output": "vocal",
+      "polyphony": 8
+    },
+    {
+      "id": "lyrics",
+      "name": "Lyricist",
+      "color": "#b8f28b",
+      "sound": "bell",
+      "gain": 0.45,
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "// gathers the last N syllables the Vocal chop sang (N = this note's text) into one lyric line for Master\nconst n = Number(ctx.note.text) || 7;\nconst sung = (ctx.inputs.vocal?.frames ?? []).slice(-n).map((f) => f.text).join(' ').replace(/- /g, '-');\nreturn `♪ ${sung} ♪`;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 96,
+          "name": "C8",
+          "template": "{{note.text}}"
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "vocal",
+          "window": "run",
+          "select": "final",
+          "as": "vocal"
+        }
+      ],
+      "output": "lyrics",
+      "polyphony": 8
+    }
+  ],
+  "patterns": [
+    {
+      "id": "intro",
+      "name": "Intro",
+      "lengthSteps": 64,
+      "notes": {
+        "chords": [
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 71,
+            "text": "Am9"
+          }
+        ],
+        "bass": [
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 45,
+            "text": "Am9"
+          }
+        ],
+        "bell": [
+          {
+            "start": "1:01",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:03",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "1:05",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:07",
+            "len": 72,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:11",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:01",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:03",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "2:05",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:07",
+            "len": 72,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:11",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:01",
+            "len": 96,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:05",
+            "len": 96,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:09",
+            "len": 96,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "4:01",
+            "len": 192,
+            "key": 84,
+            "text": "C7"
+          }
+        ],
+        "drums": [
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:14",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:16",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 79,
+            "text": "ne-"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 84,
+            "text": "e~♪"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:12",
+            "len": 12,
+            "key": 96,
+            "text": "2"
+          }
+        ]
+      }
+    },
+    {
+      "id": "verse",
+      "name": "Verse",
+      "lengthSteps": 64,
+      "notes": {
+        "pluck": [
+          {
+            "start": "1:01",
+            "len": 48,
+            "key": 69,
+            "text": "A5"
+          },
+          {
+            "start": "1:03",
+            "len": 48,
+            "key": 72,
+            "text": "C6"
+          },
+          {
+            "start": "1:05",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "1:09",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:11",
+            "len": 48,
+            "key": 72,
+            "text": "C6"
+          },
+          {
+            "start": "1:13",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:01",
+            "len": 48,
+            "key": 71,
+            "text": "B5"
+          },
+          {
+            "start": "2:03",
+            "len": 48,
+            "key": 74,
+            "text": "D6"
+          },
+          {
+            "start": "2:05",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "2:09",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "2:11",
+            "len": 48,
+            "key": 74,
+            "text": "D6"
+          },
+          {
+            "start": "2:13",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:01",
+            "len": 48,
+            "key": 67,
+            "text": "G5"
+          },
+          {
+            "start": "3:03",
+            "len": 48,
+            "key": 71,
+            "text": "B5"
+          },
+          {
+            "start": "3:05",
+            "len": 48,
+            "key": 74,
+            "text": "D6"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 78,
+            "text": "F#6"
+          },
+          {
+            "start": "3:09",
+            "len": 48,
+            "key": 74,
+            "text": "D6"
+          },
+          {
+            "start": "3:11",
+            "len": 48,
+            "key": 71,
+            "text": "B5"
+          },
+          {
+            "start": "3:13",
+            "len": 48,
+            "key": 74,
+            "text": "D6"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 78,
+            "text": "F#6"
+          },
+          {
+            "start": "4:01",
+            "len": 48,
+            "key": 72,
+            "text": "C6"
+          },
+          {
+            "start": "4:03",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "4:05",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "4:09",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:11",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "4:13",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          }
+        ],
+        "bass": [
+          {
+            "start": "1:01",
+            "len": 144,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 192,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 144,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 192,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 144,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 192,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 144,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 192,
+            "key": 45,
+            "text": "Am9"
+          }
+        ],
+        "drums": [
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 79,
+            "text": "a-"
+          },
+          {
+            "start": "2:14",
+            "len": 24,
+            "key": 81,
+            "text": "no-"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 84,
+            "text": "ne♪"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 83,
+            "text": "ki-"
+          },
+          {
+            "start": "4:14",
+            "len": 24,
+            "key": 84,
+            "text": "i-"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 86,
+            "text": "te!"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:16",
+            "len": 12,
+            "key": 96,
+            "text": "6"
+          }
+        ]
+      }
+    },
+    {
+      "id": "build",
+      "name": "Build",
+      "lengthSteps": 64,
+      "notes": {
+        "chords": [
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:05",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:05",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:05",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:05",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:05",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:05",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:05",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:05",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:05",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:05",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:05",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:05",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 71,
+            "text": "Am9"
+          },
+          {
+            "start": "4:05",
+            "len": 72,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:05",
+            "len": 72,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:05",
+            "len": 72,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:05",
+            "len": 72,
+            "key": 71,
+            "text": "Am9"
+          }
+        ],
+        "drums": [
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:03",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:07",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:02",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:04",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:06",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:08",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:10",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:12",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:14",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:16",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:01",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:01:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:02",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:02:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:03",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:03:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:04",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:04:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:05",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:05:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:06",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:06:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:07",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:07:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:08",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:08:12",
+            "len": 12,
+            "key": 38,
+            "text": "snare"
+          }
+        ],
+        "riser": [
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 60,
+            "text": "↑"
+          },
+          {
+            "start": "3:02",
+            "len": 24,
+            "key": 61,
+            "text": "↑"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 62,
+            "text": "↑"
+          },
+          {
+            "start": "3:04",
+            "len": 24,
+            "key": 63,
+            "text": "↑"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 64,
+            "text": "↑"
+          },
+          {
+            "start": "3:06",
+            "len": 24,
+            "key": 65,
+            "text": "↑"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 66,
+            "text": "↑"
+          },
+          {
+            "start": "3:08",
+            "len": 24,
+            "key": 67,
+            "text": "↑"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 68,
+            "text": "↑"
+          },
+          {
+            "start": "3:10",
+            "len": 24,
+            "key": 69,
+            "text": "↑"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 70,
+            "text": "↑"
+          },
+          {
+            "start": "3:12",
+            "len": 24,
+            "key": 71,
+            "text": "↑"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 72,
+            "text": "↑"
+          },
+          {
+            "start": "3:14",
+            "len": 24,
+            "key": 73,
+            "text": "↑"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 74,
+            "text": "↑"
+          },
+          {
+            "start": "3:16",
+            "len": 24,
+            "key": 75,
+            "text": "↑"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 76,
+            "text": "↑"
+          },
+          {
+            "start": "4:02",
+            "len": 24,
+            "key": 77,
+            "text": "↑"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 78,
+            "text": "↑"
+          },
+          {
+            "start": "4:04",
+            "len": 24,
+            "key": 79,
+            "text": "↑"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 80,
+            "text": "↑"
+          },
+          {
+            "start": "4:06",
+            "len": 24,
+            "key": 81,
+            "text": "↑"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 82,
+            "text": "↑"
+          },
+          {
+            "start": "4:08",
+            "len": 24,
+            "key": 83,
+            "text": "↑"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "4:12",
+            "len": 24,
+            "key": 79,
+            "text": "san!"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 81,
+            "text": "ni!"
+          },
+          {
+            "start": "4:14",
+            "len": 24,
+            "key": 83,
+            "text": "i-"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 84,
+            "text": "chi!"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:16",
+            "len": 12,
+            "key": 96,
+            "text": "4"
+          }
+        ]
+      }
+    },
+    {
+      "id": "chorus",
+      "name": "Chorus",
+      "lengthSteps": 64,
+      "notes": {
+        "chords": [
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:04",
+            "len": 72,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:04",
+            "len": 72,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:04",
+            "len": 72,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:04",
+            "len": 72,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 144,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 144,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 144,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 144,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:04",
+            "len": 72,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:04",
+            "len": 72,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:04",
+            "len": 72,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:04",
+            "len": 72,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 144,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 144,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 144,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 144,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:04",
+            "len": 72,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:04",
+            "len": 72,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:04",
+            "len": 72,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:04",
+            "len": 72,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 144,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 144,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 144,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 144,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 71,
+            "text": "Am9"
+          },
+          {
+            "start": "4:04",
+            "len": 72,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:04",
+            "len": 72,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:04",
+            "len": 72,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:04",
+            "len": 72,
+            "key": 71,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 71,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 144,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 144,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 144,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 144,
+            "key": 71,
+            "text": "Am9"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 71,
+            "text": "Am9"
+          }
+        ],
+        "bass": [
+          {
+            "start": "1:01",
+            "len": 72,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:04",
+            "len": 72,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:07",
+            "len": 48,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:09",
+            "len": 144,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:15",
+            "len": 48,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 72,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:04",
+            "len": 72,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:07",
+            "len": 48,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:09",
+            "len": 144,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:15",
+            "len": 48,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 72,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:04",
+            "len": 72,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:07",
+            "len": 48,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:09",
+            "len": 144,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "3:15",
+            "len": 48,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 72,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:04",
+            "len": 72,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:09",
+            "len": 144,
+            "key": 45,
+            "text": "Am9"
+          },
+          {
+            "start": "4:15",
+            "len": 48,
+            "key": 45,
+            "text": "Am9"
+          }
+        ],
+        "drums": [
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 39,
+            "text": "clap"
+          },
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 39,
+            "text": "clap"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 46,
+            "text": "open hat"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 39,
+            "text": "clap"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 38,
+            "text": "snare"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 39,
+            "text": "clap"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 46,
+            "text": "open hat"
+          },
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 49,
+            "text": "crash"
+          }
+        ],
+        "bell": [
+          {
+            "start": "1:01",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:03",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "1:05",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:07",
+            "len": 72,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:11",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:01",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:03",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "2:05",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:07",
+            "len": 72,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:11",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:01",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:03",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "3:05",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:07",
+            "len": 72,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:11",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:01",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "4:03",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:05",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "4:09",
+            "len": 48,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "4:11",
+            "len": 96,
+            "key": 88,
+            "text": "E7"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 79,
+            "text": "ki-"
+          },
+          {
+            "start": "1:10",
+            "len": 24,
+            "key": 84,
+            "text": "ra☆"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 81,
+            "text": "su-"
+          },
+          {
+            "start": "2:10",
+            "len": 24,
+            "key": 83,
+            "text": "ki~"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 79,
+            "text": "nya-"
+          },
+          {
+            "start": "3:10",
+            "len": 24,
+            "key": 76,
+            "text": "n♡"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 84,
+            "text": "yay!"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:16",
+            "len": 12,
+            "key": 96,
+            "text": "7"
+          }
+        ]
+      }
+    },
+    {
+      "id": "sparkle",
+      "name": "Sparkle (layer)",
+      "lengthSteps": 64,
+      "notes": {
+        "pluck": [
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:02",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:03",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "1:04",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "1:06",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:07",
+            "len": 24,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:08",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "1:10",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "1:12",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:14",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:15",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "1:16",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:02",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:03",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "2:04",
+            "len": 24,
+            "key": 93,
+            "text": "A7"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "2:06",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:07",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:08",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "2:10",
+            "len": 24,
+            "key": 93,
+            "text": "A7"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "2:12",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:14",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "2:16",
+            "len": 24,
+            "key": 93,
+            "text": "A7"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:02",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "3:04",
+            "len": 24,
+            "key": 90,
+            "text": "F#7"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "3:06",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:08",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "3:10",
+            "len": 24,
+            "key": 90,
+            "text": "F#7"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "3:12",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:14",
+            "len": 24,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "3:16",
+            "len": 24,
+            "key": 90,
+            "text": "F#7"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "4:02",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "4:04",
+            "len": 24,
+            "key": 95,
+            "text": "B7"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "4:06",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "4:08",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "4:10",
+            "len": 24,
+            "key": 95,
+            "text": "B7"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "4:12",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "4:14",
+            "len": 24,
+            "key": 88,
+            "text": "E7"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 91,
+            "text": "G7"
+          },
+          {
+            "start": "4:16",
+            "len": 24,
+            "key": 95,
+            "text": "B7"
+          }
+        ],
+        "drums": [
+          {
+            "start": "1:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:02",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:04",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:06",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:08",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:10",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:12",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:14",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "1:16",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:02",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:04",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:06",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:08",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:10",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:12",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:14",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "2:16",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:02",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:04",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:06",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:08",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:10",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:12",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:14",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "3:16",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:02",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:04",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:06",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:08",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:10",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:12",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:13",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:14",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:15",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          },
+          {
+            "start": "4:16",
+            "len": 24,
+            "key": 42,
+            "text": "hat"
+          }
+        ]
+      }
+    },
+    {
+      "id": "break",
+      "name": "Break",
+      "lengthSteps": 64,
+      "notes": {
+        "chords": [
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 55,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 59,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 62,
+            "text": "Em9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 66,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 60,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 64,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 67,
+            "text": "Am9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 71,
+            "text": "Am9"
+          }
+        ],
+        "bass": [
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 40,
+            "text": "Em9"
+          },
+          {
+            "start": "4:01",
+            "len": 384,
+            "key": 45,
+            "text": "Am9"
+          }
+        ],
+        "bell": [
+          {
+            "start": "1:01",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "1:03",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "1:05",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:07",
+            "len": 72,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:11",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:13",
+            "len": 72,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:01",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:03",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "2:05",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:07",
+            "len": 72,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "2:11",
+            "len": 48,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "2:13",
+            "len": 72,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:01",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:03",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "3:05",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "3:07",
+            "len": 72,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:11",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "3:13",
+            "len": 72,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:01",
+            "len": 48,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "4:03",
+            "len": 48,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "4:05",
+            "len": 48,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "4:07",
+            "len": 48,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "4:09",
+            "len": 48,
+            "key": 86,
+            "text": "D7"
+          },
+          {
+            "start": "4:11",
+            "len": 96,
+            "key": 88,
+            "text": "E7"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "4:09",
+            "len": 24,
+            "key": 84,
+            "text": "su-"
+          },
+          {
+            "start": "4:10",
+            "len": 24,
+            "key": 83,
+            "text": "ki"
+          },
+          {
+            "start": "4:11",
+            "len": 24,
+            "key": 81,
+            "text": "da"
+          },
+          {
+            "start": "4:12",
+            "len": 24,
+            "key": 79,
+            "text": "yo♡"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:16",
+            "len": 12,
+            "key": 96,
+            "text": "4"
+          }
+        ]
+      }
+    },
+    {
+      "id": "outro",
+      "name": "Outro",
+      "lengthSteps": 64,
+      "notes": {
+        "chords": [
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 57,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 60,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 64,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 67,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 59,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 62,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 64,
+            "text": "G6/9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 69,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 768,
+            "key": 64,
+            "text": "Cmaj9"
+          },
+          {
+            "start": "3:01",
+            "len": 768,
+            "key": 67,
+            "text": "Cmaj9"
+          },
+          {
+            "start": "3:01",
+            "len": 768,
+            "key": 71,
+            "text": "Cmaj9"
+          },
+          {
+            "start": "3:01",
+            "len": 768,
+            "key": 74,
+            "text": "Cmaj9"
+          }
+        ],
+        "bass": [
+          {
+            "start": "1:01",
+            "len": 384,
+            "key": 41,
+            "text": "Fmaj9"
+          },
+          {
+            "start": "2:01",
+            "len": 384,
+            "key": 43,
+            "text": "G6/9"
+          },
+          {
+            "start": "3:01",
+            "len": 768,
+            "key": 36,
+            "text": "Cmaj9"
+          }
+        ],
+        "bell": [
+          {
+            "start": "1:01",
+            "len": 96,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "1:05",
+            "len": 96,
+            "key": 81,
+            "text": "A6"
+          },
+          {
+            "start": "1:09",
+            "len": 96,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "1:13",
+            "len": 96,
+            "key": 76,
+            "text": "E6"
+          },
+          {
+            "start": "2:01",
+            "len": 192,
+            "key": 79,
+            "text": "G6"
+          },
+          {
+            "start": "2:09",
+            "len": 192,
+            "key": 83,
+            "text": "B6"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 84,
+            "text": "C7"
+          },
+          {
+            "start": "3:01",
+            "len": 384,
+            "key": 88,
+            "text": "E7"
+          }
+        ],
+        "drums": [
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 36,
+            "text": "kick"
+          },
+          {
+            "start": "3:01",
+            "len": 24,
+            "key": 49,
+            "text": "crash"
+          }
+        ],
+        "vocal": [
+          {
+            "start": "4:01",
+            "len": 24,
+            "key": 79,
+            "text": "ba-"
+          },
+          {
+            "start": "4:03",
+            "len": 24,
+            "key": 76,
+            "text": "i"
+          },
+          {
+            "start": "4:05",
+            "len": 24,
+            "key": 79,
+            "text": "ba-"
+          },
+          {
+            "start": "4:07",
+            "len": 24,
+            "key": 84,
+            "text": "i~♡"
+          }
+        ],
+        "lyrics": [
+          {
+            "start": "4:09",
+            "len": 12,
+            "key": 96,
+            "text": "4"
+          }
+        ]
+      }
+    }
+  ],
+  "arrangements": [
+    {
+      "id": "main",
+      "name": "Full song",
+      "tracks": [
+        {
+          "name": "Song"
+        },
+        {
+          "name": "Sparkle"
+        }
+      ],
+      "clips": [
+        {
+          "type": "pattern",
+          "ref": "intro",
+          "track": 0,
+          "start": "1:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "verse",
+          "track": 0,
+          "start": "5:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "verse",
+          "track": 0,
+          "start": "9:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "build",
+          "track": 0,
+          "start": "13:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "chorus",
+          "track": 0,
+          "start": "17:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "chorus",
+          "track": 0,
+          "start": "21:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "break",
+          "track": 0,
+          "start": "25:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "verse",
+          "track": 0,
+          "start": "29:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "verse",
+          "track": 0,
+          "start": "33:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "build",
+          "track": 0,
+          "start": "37:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "chorus",
+          "track": 0,
+          "start": "41:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "chorus",
+          "track": 0,
+          "start": "45:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "outro",
+          "track": 0,
+          "start": "49:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "sparkle",
+          "track": 1,
+          "start": "41:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "sparkle",
+          "track": 1,
+          "start": "45:01"
+        }
+      ]
+    }
+  ],
+  "mixer": {
+    "buses": [
+      {
+        "id": "drums",
+        "name": "Drums",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "chords",
+        "name": "Supersaw",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "bass",
+        "name": "Sub",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "pluck",
+        "name": "Pluck arp",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "bell",
+        "name": "Bell hook",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "riser",
+        "name": "Riser",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "vocal",
+        "name": "Vocal chop",
+        "slots": [],
+        "sends": []
+      },
+      {
+        "id": "lyrics",
+        "name": "Lyrics",
+        "slots": []
+      }
+    ]
+  }
+}

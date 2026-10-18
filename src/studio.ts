@@ -8,7 +8,7 @@ import { fileURLToPath } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { score } from "./cli.ts";
 import { applyPatch, check, createHost, PLUGINS, RANK } from "./host.ts";
-import { starter } from "./project.ts";
+import { compile, starter } from "./project.ts";
 import { appendEvent, eventsFile, refresh, studioFile, writeJson } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
@@ -106,6 +106,16 @@ export async function studio(o: { file: string; port?: number }) {
     "GET /api/events": (req, res) => {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       res.write(": hi\n\n"); clients.add(res); req.on("close", () => clients.delete(res));
+    },
+    // the score as written, for audio export: every note at its absolute tick. Mute/solo apply; `when`/`pass` conditions and loops
+    // are not evaluated (the score plays once, as notated). ponytail: evaluate conditions by bouncing a take when songs need it
+    "GET /api/score": (req, res) => {
+      const q = new URL(req.url ?? "/", "http://x").searchParams, p = host.st!.p, chs: any[] = p.channels ?? [], solo = chs.some((c) => c.solo);
+      const plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
+      const on = new Set(chs.filter((c) => !c.mute && (!solo || c.solo)).map((c) => c.id));
+      const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len }));
+      json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes,
+        channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain })) });
     },
     "GET /api/take/(\\w+)": (_q, res, m) => withTakes((t) => { const g = t.get(m[1]); g ? json(res, 200, { ...g, frames: t.frames(m[1]) }) : json(res, 404, { error: "unknown take" }); }),
     // browser actions: the same tools an MCP client calls, as source "studio". The UI's Play sends pace: "project"; without it a run is unpaced
