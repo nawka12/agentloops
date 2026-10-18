@@ -1,0 +1,197 @@
+import { createHash, randomUUID } from "node:crypto";
+import { compile, BAR } from "./project.ts";
+import { evalBool, renderTemplate } from "./expr.ts";
+import { generators } from "./generators.ts";
+import { celFrame, createMixer, RunStop } from "./mixer.ts";
+import { openTakes } from "./takes.ts";
+
+const sha = (x: unknown) => createHash("sha256").update(typeof x === "string" ? x : JSON.stringify(x)).digest("hex");
+const frameHash = (f: any) => sha([f.kind, !!f.final, f.text ?? null, f.json ?? null]);
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const textOf = (f: any) => f.text ?? JSON.stringify(f.json);
+
+export type RunOpts = { arrangement?: string; pattern?: string; input?: unknown; cache?: "fresh" | "prefer"; budget?: number };
+
+/** Compile and play a project headlessly. `proj` is { p, dir } from loadProject. */
+export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) {
+  const { p } = proj;
+  const plan = compile(p, opts);
+  const takes = openTakes(proj.dir);
+  const run: any = {
+    id: randomUUID().slice(0, 8), project: p.name, arrangement: opts.arrangement, start: Date.now(), cache: opts.cache ?? "fresh",
+    costUsd: 0, tokens: 0, pass: 0, loop: { index: 0, max: 1 }, trigger: { payload: opts.input ?? null },
+    budget: opts.budget ?? p.budgets?.runUsd ?? null, voices: [], stopped: null, abort: new AbortController(), seq: 0, fid: 0,
+  };
+  const mixer = createMixer(p, run);
+  run.ctx = (extra: object = {}) => ({
+    loop: run.loop, run: { costUsd: run.costUsd, elapsedMs: Date.now() - run.start }, trigger: run.trigger, bus: mixer.view, ...extra,
+  });
+  const stop = (reason: string) => { run.stopped ??= reason; run.abort.abort(); };
+
+  // channels: polyphony queue + conversation state
+  const chs: Record<string, any> = {};
+  (p.channels ?? []).forEach((def: any, idx: number) => (chs[def.id] = { def, idx, active: 0, queue: [] as (() => void)[], hist: {} as Record<string, any[]>, prev: null }));
+  const acquire = (c: any) => (c.active < (c.def.polyphony ?? 4) ? (c.active++, Promise.resolve()) : new Promise<void>((r) => c.queue.push(r)));
+  const release = (c: any) => { const n = c.queue.shift(); n ? n() : c.active--; };
+
+  // inputs: snapshot of frames the listened bus emitted (completed voices only)
+  function snapshot(def: any) {
+    const inputs: Record<string, any> = {}, used: any[] = [];
+    for (const i of def.inputs ?? []) {
+      let fs: any[] = mixer.buses[i.bus].emitted;
+      if ((i.select ?? "final") === "final") fs = fs.filter((f) => f.final);
+      const w = i.window ?? "last";
+      fs = w === "pass" ? fs.filter((f) => f.pass === run.pass) : w === "last" ? fs.slice(-1) : w === "run" ? fs : fs.slice(-w.lastN);
+      inputs[i.as ?? i.bus] = { text: fs.map(textOf).join("\n\n"), json: fs.at(-1)?.json ?? null, frames: fs.map(celFrame) };
+      used.push(...fs);
+    }
+    return { inputs, used };
+  }
+
+  function mkFrame(v: any, r: any, i: number, last: boolean) {
+    return {
+      id: `f${++run.fid}`, runId: run.id, voiceId: v.seq, pos: { bar: Math.floor(v.n.start / BAR) + 1, tick: v.n.start % BAR },
+      source: { channel: v.ch.def.id, clip: v.clip.id }, kind: r.kind ?? "message", final: last, role: "assistant",
+      text: r.text, json: r.json, trust: "trusted", meta: r.meta ?? {},
+      ord: v.ch.idx * 1e9 + v.seq * 1e3 + i, pass: v.pass, _v: v, // ord: channel order, then note order (<1000 frames per voice)
+    };
+  }
+
+  async function generateOnce(v: any) {
+    if (run.stopped) throw new RunStop(run.stopped);
+    const gen = v.ch.def.generator;
+    const raw = await generators[gen.plugin]({
+      prompt: v.prompt, inputs: v.inputs, note: v.noteCtx, loop: v.loop, trigger: run.trigger, params: gen.params ?? {}, history: v.base,
+      schema: v.instr?.schema, signal: run.abort.signal,
+      charge: (usd: number, tokens: number) => { v.costUsd += usd; run.costUsd += usd; run.tokens += tokens; },
+      checkBudget: () => { if (run.budget != null && run.costUsd >= run.budget) throw new RunStop(`budget exceeded: $${run.costUsd.toFixed(4)} >= $${run.budget}`); },
+    });
+    return raw.map((r, i) => mkFrame(v, r, i, i === raw.length - 1));
+  }
+  // ponytail: backoff 50ms * 2^n with no jitter; add jitter if providers rate-limit in lockstep
+  const backoff = (v: any) => sleep(50 * 2 ** Math.max(0, (v.ch.def.retries ?? 1) - v.attemptsLeft - 1));
+  async function generate(v: any) {
+    for (;;) {
+      try { return await generateOnce(v); }
+      catch (e) {
+        if (e instanceof RunStop || v.attemptsLeft <= 0) throw e;
+        v.attemptsLeft--;
+        await backoff(v);
+      }
+    }
+  }
+  // voice failure policy: stop halts the run, skip lets it continue
+  async function fail(v: any, e: Error) {
+    v.status = "failed"; v.error = e.message;
+    if (e instanceof RunStop || (v.ch.def.onFail ?? "stop") === "stop") { stop(e.message); throw e instanceof RunStop ? e : new RunStop(`voice ${v.ch.def.id}#${v.seq} failed: ${e.message}`); }
+  }
+
+  async function execute(v: any, prev: any) {
+    const def = v.ch.def, hk = def.context === "per-pattern" ? v.clip.patternId : "*";
+    if (run.stopped) throw new RunStop(run.stopped);
+    if (v.n.slide && prev) { await prev.done.catch(() => {}); v.base = prev.messages ?? []; }
+    else v.base = def.context === "persistent" || def.context === "per-pattern" ? [...(v.ch.hist[hk] ?? [])] : [];
+    v.startMs = Date.now() - run.start;
+    const gen = def.generator;
+    v.cacheKey = sha([gen.plugin, gen.params ?? {}, v.prompt, v.notePar, v.inFrames.map(frameHash), v.seed, v.base.length ? sha(v.base) : "", run.trigger.payload]);
+    const cached = run.cache === "prefer" ? takes.findCached(v.cacheKey) : null;
+    let frames;
+    if (cached) {
+      v.cached = true;
+      frames = cached.map((r, i) => ({ ...mkFrame(v, r, i, r.final), kind: r.kind, meta: { ...r.meta, costUsd: 0, cached: true } }));
+    } else frames = await generate(v);
+    v.frames = frames;
+    const final = frames.at(-1);
+    v.messages = [...v.base, { role: "user", content: v.prompt }, { role: "assistant", content: textOf(final) }];
+    if (def.context === "persistent" || def.context === "per-pattern") (v.ch.hist[hk] ??= []).push(...v.messages.slice(-2));
+    for (const f of frames) await mixer.receive(f, def.output ?? "master");
+    v.status = "done"; v.endMs = Date.now() - run.start;
+  }
+
+  function spawn(clip: any, n: any) {
+    const ch = chs[n.ch], seq = run.seq++;
+    const v: any = { ch, n, clip, seq, pass: run.pass, loop: { index: clip.index, max: clip.loop?.max ?? 1 }, end: n.start + n.len,
+      status: "pending", costUsd: 0, attemptsLeft: ch.def.retries ?? 1, frames: [], cached: false };
+    run.voices.push(v);
+    v.instr = ch.def.keymap?.find((k: any) => k.key === n.key);
+    v.noteCtx = { text: n.text, key: n.key, name: v.instr?.name, vel: n.vel, pan: n.pan, fine: n.fine, start: n.start, len: n.len };
+    v.notePar = { key: n.key, vel: n.vel, pan: n.pan, fine: n.fine, text: n.text, slide: n.slide };
+    v.seed = `${p.seed ?? 0}:${n.start}:${n.fine}:${clip.index}`; // project seed + position + fine offset (+ loop pass, so passes cache separately)
+    const snap = snapshot(ch.def); // inputs are snapshotted at voice start (here, at the barrier)
+    v.inputs = snap.inputs; v.inFrames = snap.used;
+    v.prompt = renderTemplate(v.instr?.template ?? "{{note.text}}", { inputs: v.inputs, note: v.noteCtx, loop: v.loop, trigger: run.trigger, params: ch.def.generator.params ?? {} });
+    const prev = ch.prev; ch.prev = v;
+    v.retry = async () => { // validator retry: re-run the source voice, counts against its retries
+      if (v.attemptsLeft <= 0) return null;
+      v.attemptsLeft--;
+      await backoff(v);
+      try { v.frames = await generateOnce(v); return v.frames.at(-1); } // the take records (and cache replays) the retried output
+      catch (e) { if (e instanceof RunStop) throw e; return null; }
+    };
+    v.fail = (e: Error) => fail(v, e);
+    v.done = (async () => {
+      await acquire(ch);
+      try { await execute(v, prev); }
+      catch (e: any) {
+        await fail(v, e); // throws unless onFail is skip
+        const f = mkFrame(v, { kind: "error", text: e.message }, 0, false);
+        v.frames = [f];
+        await mixer.receive(f, ch.def.output ?? "master");
+      } finally { release(ch); v.endMs ??= Date.now() - run.start; }
+    })();
+    v.done.catch(() => {});
+  }
+
+  const loopOf = (clip: any) => ({ index: clip.index, max: clip.loop?.max ?? 1 });
+  function shouldRun(n: any, clip: any) {
+    const loop = loopOf(clip);
+    if (n.pass) { const [a, m] = n.pass.split(":").map(Number); if (loop.index % m !== a - 1) return false; }
+    return !n.when || evalBool(n.when, run.ctx({ loop, note: { text: n.text, key: n.key } }));
+  }
+
+  // barrier scheduling (SPEC 5.2 / 7.2), global scope only
+  async function play() {
+    const { clips, points } = plan;
+    let i = 0, replay: any = null;
+    while (i < points.length) {
+      const t = points[i];
+      await Promise.all(run.voices.filter((v: any) => v.end <= t).map((v: any) => v.done)); // done + stream tails
+      await mixer.flushAll(); // aligned joins for barrier t
+      const lc = clips.find((c) => c.loop && c.start + c.len === t && (!replay || replay === c));
+      if (lc) {
+        run.loop = loopOf(lc);
+        const done = (lc.loop.until && evalBool(lc.loop.until, run.ctx())) || lc.index + 1 >= lc.loop.max; // max = number of passes
+        mixer.endPass();
+        if (!done) { lc.index++; run.pass++; replay = lc; i = points.findIndex((x) => x >= lc.start); continue; }
+        replay = null;
+      }
+      for (const clip of clips) {
+        if (replay && clip !== replay) continue;
+        for (const n of clip.notes) {
+          if (n.start !== t) continue;
+          run.loop = loopOf(clip);
+          if (shouldRun(n, clip)) spawn(clip, n);
+          else run.voices.push({ ch: chs[n.ch], n, seq: run.seq++, pass: run.pass, status: "skipped", costUsd: 0, frames: [], end: -1, cached: false });
+        }
+      }
+      i++;
+    }
+    await Promise.all(run.voices.map((v: any) => v.done)); // tails of everything still running
+    await mixer.flushAll();
+    mixer.endPass();
+  }
+
+  try { await play(); }
+  catch (e: any) { if (e instanceof RunStop) stop(e.message); else { stop(e.message); run.error = e; } }
+  await Promise.allSettled(run.voices.map((v: any) => v.done));
+  takes.save(run);
+  takes.close();
+  if (run.error) throw run.error;
+  const master = mixer.buses.master.emitted.filter((f: any) => f.final);
+  const voices = run.voices.filter((v: any) => v.status !== "skipped");
+  return {
+    takeId: run.id, passes: run.pass + 1, costUsd: run.costUsd, stopped: run.stopped as string | null,
+    voicesRun: voices.filter((v: any) => !v.cached).length, cacheHits: voices.filter((v: any) => v.cached).length,
+    skipped: run.voices.length - voices.length, master,
+  };
+}

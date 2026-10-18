@@ -1,0 +1,240 @@
+{
+  "format": "agentloops/1",
+  "name": "Draft-Critique-Revise (LLM)",
+  "seed": 1234,
+  "clock": {
+    "mode": "barrier",
+    "beatsPerBar": 4,
+    "stepsPerBeat": 4,
+    "ppq": 96
+  },
+  "budgets": {
+    "runUsd": 5
+  },
+  "channels": [
+    {
+      "id": "writer",
+      "name": "Writer",
+      "color": "#e8a33d",
+      "generator": {
+        "plugin": "llm.agent",
+        "params": {
+          "model": "claude-sonnet-5-5",
+          "system": "You are a concise technical writer.",
+          "effort": 0.5
+        }
+      },
+      "keymap": [
+        {
+          "key": 60,
+          "name": "Draft",
+          "template": "Write a draft about: {{trigger.payload.topic}}"
+        },
+        {
+          "key": 62,
+          "name": "Revise",
+          "template": "Revise the draft using this review:\n{{inputs.review}}"
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "review",
+          "window": "last",
+          "select": "final",
+          "as": "review"
+        }
+      ],
+      "context": "persistent",
+      "output": "draft",
+      "polyphony": 1,
+      "retries": 1,
+      "onFail": "stop"
+    },
+    {
+      "id": "critic",
+      "name": "Critic",
+      "color": "#5aa9e6",
+      "generator": {
+        "plugin": "llm.agent",
+        "params": {
+          "model": "claude-opus-5-5",
+          "system": "You are a strict reviewer. Approve only when the draft is clear and complete.",
+          "effort": 0.7
+        }
+      },
+      "keymap": [
+        {
+          "key": 60,
+          "name": "Review",
+          "template": "Review the draft:\n{{inputs.draft}}",
+          "schema": {
+            "type": "object",
+            "required": [
+              "approved",
+              "notes"
+            ],
+            "properties": {
+              "approved": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "draft",
+          "window": "last",
+          "select": "final",
+          "as": "draft"
+        }
+      ],
+      "context": "fresh",
+      "output": "review",
+      "polyphony": 1,
+      "retries": 1,
+      "onFail": "stop"
+    }
+  ],
+  "patterns": [
+    {
+      "id": "loop",
+      "name": "Draft loop",
+      "lengthSteps": 16,
+      "loop": {
+        "max": 5,
+        "until": "bus('review').last.json.approved"
+      },
+      "notes": {
+        "writer": [
+          {
+            "start": 0,
+            "len": 96,
+            "key": 60,
+            "vel": 0.5,
+            "pan": 0.2,
+            "when": "loop.index == 0"
+          },
+          {
+            "start": 0,
+            "len": 96,
+            "key": 62,
+            "vel": 0.5,
+            "pan": 0,
+            "when": "loop.index > 0",
+            "slide": true
+          }
+        ],
+        "critic": [
+          {
+            "start": "1:09",
+            "len": 96,
+            "key": 60,
+            "vel": 0.7
+          }
+        ]
+      }
+    }
+  ],
+  "arrangements": [
+    {
+      "id": "main",
+      "name": "Main",
+      "tracks": [
+        {
+          "name": "Main"
+        }
+      ],
+      "clips": [
+        {
+          "type": "pattern",
+          "ref": "loop",
+          "track": 0,
+          "start": "1:01",
+          "len": 384
+        }
+      ],
+      "markers": []
+    }
+  ],
+  "mixer": {
+    "buses": [
+      {
+        "id": "draft",
+        "name": "Draft",
+        "slots": [],
+        "sends": [
+          {
+            "to": "final",
+            "mode": "final"
+          }
+        ],
+        "join": "aligned"
+      },
+      {
+        "id": "review",
+        "name": "Review",
+        "slots": [
+          {
+            "plugin": "fx.validator",
+            "params": {
+              "onFail": "retry",
+              "schema": {
+                "type": "object",
+                "required": [
+                  "approved",
+                  "notes"
+                ],
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "sends": [
+          {
+            "to": "final",
+            "mode": "sidechain"
+          }
+        ]
+      },
+      {
+        "id": "final",
+        "name": "Final",
+        "slots": [
+          {
+            "plugin": "fx.gate",
+            "params": {
+              "condition": "side.last.json.approved",
+              "hold": "pass"
+            }
+          }
+        ],
+        "sends": [
+          {
+            "to": "master",
+            "mode": "final"
+          }
+        ]
+      }
+    ],
+    "master": {
+      "targets": [
+        {
+          "type": "return"
+        }
+      ]
+    }
+  },
+  "automation": [],
+  "controllers": []
+}

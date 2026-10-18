@@ -1,0 +1,16 @@
+{
+  "name": "agentloops",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "agentloops": "src/cli.ts"
+  },
+  "scripts": {
+    "test": "node --test"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.135.0",
+    "@marcbachmann/cel-js": "^8.0.0"
+  }
+}
