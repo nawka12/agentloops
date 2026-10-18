@@ -197,7 +197,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Swing: write 8th notes at ticks 0 and 64 of each beat (96 ticks per beat).
   - ii–V–I with rootless 9th/13th voicings (in C: Dm9 → G13 → Cmaj9).
   - Walking bass on quarter notes.
-  - Ride "ding ding-a ding"; hi-hat (44) on 2 and 4.
+  - The ride pattern "ding ding-a ding" goes on the closed hat (42): every beat, plus the swung "and" (tick 64) of 2 and 4. The kit has no ride cymbal yet (51 plays a rim click), and 44 sounds the same as 42.
   - Comp on the "and" of 2 and 4.
 - **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
 - **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
