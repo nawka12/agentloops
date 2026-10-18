@@ -349,3 +349,13 @@ textarea { font: inherit; color: inherit; }
 .bsub { padding: 4px 8px 2px 16px; color: var(--muted); font-size: 11px; }
 
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
+
+/* Connect a harness */
+button.harness { background: none; border: 0; box-shadow: none; padding: 2px 4px; font: inherit; cursor: pointer; } button.harness:hover { color: var(--text); }
+.connect button { white-space: nowrap; flex: none; }
+.connect .hrow { margin: 6px 10px; padding: 8px 10px; background: var(--well); border: 1px solid var(--edge); border-radius: 3px; }
+.connect .hhead { display: flex; gap: 10px; align-items: center; justify-content: space-between; } .connect .hhead .muted { font-size: 12px; }
+.connect p { margin: 6px 0 0; font-size: 12px; overflow-wrap: anywhere; } .connect code { color: #cfe3c2; font: 11.5px "Noto Sans Mono", monospace; } .connect .bad { color: var(--red); }
+.connect .next { display: flex; gap: 8px; align-items: center; justify-content: space-between; color: var(--amber); }
+.connect .snip { position: relative; margin-top: 6px; } .connect .snip button { position: absolute; top: 4px; right: 4px; }
+.connect pre { margin: 0; padding: 8px; background: var(--lcd); border: 1px solid var(--edge); border-radius: 2px; font: 11.5px/1.4 "Noto Sans Mono", monospace; white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }

@@ -106,6 +106,7 @@ Field notes:
 Read: `project_get` (`summary: true` for an outline), `project_validate`, `score_view`, `plugin_search`, `take_list`, `take_get`, `studio_status`, `studio_focus`, `studio_view`.
 Edit: `project_create`, `project_open`, `project_patch`, `channel_upsert`, `pattern_upsert`, `bus_upsert`, `arrangement_upsert`, `undo`.
 Run: `run_start`, `run_status`, `run_stop`, `voice_reply`.
+Audio (edit scope): `audio_export` renders the song or one pattern to `mp3` or `wav` in the project folder. Needs an open studio; slow, about 1.6x the song's length (progress is reported). `file` is a plain name, default is the song name; it refuses to overwrite unless `overwrite: true`. Without ffmpeg on PATH an MP3 request keeps the WAV and says so.
 
 The server lists only what its `--scope` allows. `agentloops init` registers it with `--scope run --budget 1`, so every run is capped at $1 unless the user raises `--budget` in `.mcp.json`. If `run_start` is missing, the server was started with a narrower scope (the bare default is `edit`, which cannot spend money). Either ask the user to add `"--scope", "run"` to the server `args` and restart, or run `node <path to agentloops>/src/cli.ts render song.alp.json` through a shell.
 

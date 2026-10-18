@@ -1,9 +1,9 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { join } from "node:path";
 import { parseArgs } from "node:util";
-import { loadProject, MANUAL, pos, starter, STEP, validate, type Err } from "./project.ts";
+import { harnessFiles, HARNESSES } from "./connect.ts";
+import { loadProject, pos, starter, STEP, validate, type Err } from "./project.ts";
 import { loggedRender } from "./sync.ts";
 
 const USAGE = `usage:
@@ -11,7 +11,7 @@ const USAGE = `usage:
   agentloops render <file> [--arrangement id] [--pattern id] [--input f.json] [--cache fresh|prefer] [--budget n] [--json]
   agentloops score <file> [--pattern id]
   agentloops mcp [--project <file>] [--scope read|edit|run] [--budget <usd>]   (Studio MCP server on stdio)
-  agentloops init [dir] [--harness claude-code|agents-md]
+  agentloops init [dir] [--harness claude-code|codex|cursor|opencode|other]
   agentloops studio <file> [--port 4870] [--no-open]   (local web UI on 127.0.0.1)`;
 
 function load(file: string) {
@@ -84,23 +84,16 @@ export function score(p: any, onlyPattern?: string): string {
   return out.join("\n");
 }
 
-const SKILL_DESC = "Use when the user asks to make, build, edit, run or debug an AgentLoops song or project (an .alp.json file): a multi-agent pipeline of channels, patterns, buses and loops. Teaches the project format, the Studio MCP tools and the authoring loop.";
-
-/** Create <dir>/song.alp.json plus harness files. Existing files are skipped, never overwritten. */
-function init(dir: string, harness?: string) {
-  const files: [string, string][] = [["song.alp.json", JSON.stringify(starter(), null, 2) + "\n"]];
-  if (harness === "claude-code") {
-    const cli = fileURLToPath(import.meta.url); // absolute path: no global install needed
-    files.push([".mcp.json", JSON.stringify({ mcpServers: { agentloops: { command: "node", args: [cli, "mcp", "--project", "song.alp.json", "--scope", "run", "--budget", "1"] } } }, null, 2) + "\n"]);
-    files.push([".claude/skills/agentloops/SKILL.md", `---\nname: agentloops\ndescription: ${JSON.stringify(SKILL_DESC)}\n---\n\n${MANUAL}`]);
-  } else files.push(["AGENTS.md", MANUAL]);
-  for (const [rel, body] of files) {
-    const path = join(dir, rel);
-    if (existsSync(path)) { console.log(`skipped ${path} (already exists)`); continue; }
-    mkdirSync(dirname(path), { recursive: true });
-    writeFileSync(path, body);
-    console.log(`created ${path}`);
-  }
+/** Create <dir>/song.alp.json plus harness files (see connect.ts). Existing files are skipped, never overwritten. */
+function init(dir: string, harness = "other") {
+  const song = join(dir, "song.alp.json");
+  if (existsSync(song)) console.log(`skipped ${song} (already exists)`);
+  else { mkdirSync(dir, { recursive: true }); writeFileSync(song, JSON.stringify(starter(), null, 2) + "\n"); console.log(`created ${song}`); }
+  const r = harnessFiles(dir, harness, "song.alp.json");
+  for (const f of r.wrote) console.log(`created ${join(dir, f)}`);
+  for (const f of r.skipped) console.log(`skipped ${join(dir, f)} (already exists)`);
+  console.log(`next: ${r.next}`);
+  if (r.snippet) console.log(`\n${r.snippet}`);
 }
 
 async function main() {
@@ -118,7 +111,7 @@ async function main() {
     return serve({ project: values.project, scope: (values.scope ?? "edit") as any, budget: values.budget ? Number(values.budget) : undefined });
   }
   if (cmd === "init") {
-    if (values.harness && !["claude-code", "agents-md"].includes(values.harness)) { console.error("--harness must be claude-code or agents-md"); process.exit(2); }
+    if (values.harness && values.harness !== "agents-md" && !HARNESSES.some((x) => x.id === values.harness)) { console.error(`--harness must be one of ${HARNESSES.map((x) => x.id).join(", ")}`); process.exit(2); }
     return init(positionals[0] ?? ".", values.harness);
   }
   const file = positionals[0];

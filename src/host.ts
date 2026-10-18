@@ -1,10 +1,11 @@
 // The Studio host: owns the project, one undo stack for every source, runs, the harness bridge and the tool implementations.
 // `agentloops mcp` (headless) and `agentloops studio` each create one; the MCP process relays to the studio's when one is open (see mcp.ts).
 import { existsSync } from "node:fs";
-import { dirname, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { score } from "./cli.ts";
+import { saveAudio, wavSeconds, which } from "./export.ts";
 import { checkSchema } from "./mixer.ts";
 import { loadProject, starter, validate, type Err } from "./project.ts";
 import { appendEvent, loggedRender, refresh, writeJson } from "./sync.ts";
@@ -85,6 +86,8 @@ const obj = (properties: any = {}, required: string[] = []) => ({ type: "object"
 export const RANK = { read: 0, edit: 1, run: 2 } as const;
 const PANELS = ["playlist", "rack", "pianoroll", "mixer", "tracer", "monitor"];
 const NO_STUDIO = "no studio open: run `agentloops studio <file>` to see it";
+const NO_EXPORT = "open the studio (`agentloops studio <file>`) to export audio: it renders the sound in a browser";
+const EXPORT_FILE = /^[\w.-]+\.(mp3|wav)$/;
 const clip = (s: any, n = 200) => { s = typeof s === "string" ? s : JSON.stringify(s); return s == null ? s : s.length > n ? s.slice(0, n) + "…" : s; };
 // validate() is not shape-hardened; a crash on a half-built project is reported as one error instead of rejecting the edit
 export const check = (p: any): Err[] => { try { return validate(p); } catch (e: any) { return [{ path: "/", message: `project cannot be validated: ${e.message}`, fix: "Check the types of the fields you just edited (arrays vs objects vs strings)" }]; } };
@@ -247,6 +250,29 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
         return editResult({ undone: { source: u.source, tool: u.tool, summary: u.summary } });
       },
     },
+    // export (renders in the studio's browser)
+    {
+      name: "audio_export", scope: "edit",
+      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). Slow: about 1.6x the song's length, progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated).",
+      inputSchema: obj({ file: S, format: S, arrangement: S, pattern: S, overwrite: B }),
+      run: async (a: any, c: Ctx) => {
+        if (!h.render) throw new Error(NO_EXPORT);
+        const s = cur(), dir = dirname(s.file), slug = String(s.p.name ?? "song").toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "song";
+        if (a.file != null && !EXPORT_FILE.test(a.file)) throw new Error("file must be a plain name like song.mp3 or song.wav (letters, digits, _ . -; no folders)");
+        if (a.format != null && !["mp3", "wav"].includes(a.format)) throw new Error('format must be "mp3" or "wav"');
+        const format = (a.format ?? (a.file ? EXPORT_FILE.exec(a.file)![1] : "mp3")) as "mp3" | "wav";
+        if (a.file && EXPORT_FILE.exec(a.file)![1] !== format) throw new Error(`file ${a.file} does not match format ${format}`);
+        const name = a.file ?? `${slug}${a.pattern ? `-${String(a.pattern).replace(/[^\w.-]+/g, "-")}` : ""}.${format}`, out = join(dir, name);
+        const ffmpeg = format === "mp3" ? which("ffmpeg") : null, wavOut = format === "wav" || !ffmpeg ? out.replace(/\.mp3$/, ".wav") : out; // no ffmpeg: the WAV is what we keep
+        if (existsSync(wavOut) && a.overwrite !== true) throw new Error(`${wavOut} already exists: pass overwrite:true or another file name`);
+        if (a.pattern != null && !(s.p.patterns ?? []).some((x: any) => x.id === a.pattern)) throw new Error(`unknown pattern '${a.pattern}'`);
+        if (a.arrangement != null && !(s.p.arrangements ?? []).some((x: any) => x.id === a.arrangement)) throw new Error(`unknown arrangement '${a.arrangement}'`);
+        c.summary = name;
+        const { wav, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern }, c);
+        const r = await saveAudio(wav, { out, wavOut, format, ffmpeg, title: String(s.p.name ?? slug), overwrite: a.overwrite === true, signal: c.signal });
+        return { ...r, seconds: Math.round(wavSeconds(wav) * 100) / 100, renderedBy: by };
+      },
+    },
     // run
     {
       name: "run_start", scope: "run",
@@ -331,6 +357,8 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     get st() { return st; },
     /** Set by the studio once it listens; makes studio_status/focus/view live. */
     studioUrl: undefined as string | undefined,
+    /** Set by the studio: have a browser render the score to WAV bytes (audio_export). Absent when headless. */
+    render: undefined as undefined | ((req: { arrangement?: string; pattern?: string }, c: Ctx) => Promise<{ wav: Buffer; by: "tab" | "headless" }>),
     /** The latest {panel, pattern, channel, voice, selection} the studio UI posted. */
     view: { panel: null, pattern: null, channel: null, voice: null, selection: null } as any,
   };
