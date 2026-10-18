@@ -4,7 +4,7 @@ import { h, render } from "preact";
 import htm from "htm";
 import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
 import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
-import { blip, chime, click, renderWav, setMetro, setOn, setVol, sound, heard, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
+import { blip, chime, click, preload, renderWav, setMetro, setOn, setVol, sound, heard, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
 /** fetch the score for a query string ("pattern=x" or "arrangement=y") and bounce it offline to WAV bytes */
 async function bounce(q: string, tempo?: number) {
@@ -133,7 +133,7 @@ function applyEvent(e: any, live: boolean) {
     const id = `${e.runId}:${e.voice}`;
     if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
       const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
-      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, dur: ((e.len ?? 0) * 60) / bpm() / 96 }, e.at);
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, dur: ((e.len ?? 0) * 60) / bpm() / 96 }, e.at);
     }
     if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel), e.at);
     if (e.type === "frame" && e.kind === "error") blip();
@@ -195,6 +195,7 @@ export const fl = (id: string) => (S.flash.has(id) ? " flash" : "");
 function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
   Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null });
+  preload((st.project?.channels ?? []).map((c: any) => c.sound)); // sampled sounds start downloading when a song opens or a channel's Sound changes
   if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;
   if (ids.size) { pending = { ids, at: Date.now() }; tryFlash(); }

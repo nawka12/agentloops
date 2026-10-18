@@ -1,0 +1,16 @@
+Sample attribution
+==================
+
+piano/  Salamander Grand Piano V3 by Alexander Holm.
+        Licensed under CC BY 3.0: https://creativecommons.org/licenses/by/3.0/
+        Source: https://freepats.zenvoid.org/Piano/SalamanderGrandPiano/SalamanderGrandPianoV3+20161209_44khz16bit.tar.xz
+        Changes made: selected velocity layers (v5 soft, v10 mid) and one sample per 3 semitones were
+        trimmed to 8 s, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+sax/    Eb alto saxophone with vibrato, University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
+        faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+The MP3s are rebuilt from the original recordings by scripts/samples.mjs.

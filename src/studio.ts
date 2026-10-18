@@ -128,7 +128,7 @@ export async function studio(o: { file: string; port?: number }) {
       const q = new URL(req.url ?? "/", "http://x").searchParams, p = host.st!.p, chs: any[] = p.channels ?? [], solo = chs.some((c) => c.solo);
       const plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
       const on = new Set(chs.filter((c) => !c.mute && (!solo || c.solo)).map((c) => c.id));
-      const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len }));
+      const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len, vel: n.vel }));
       json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes,
         channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain })) });
     },
@@ -232,6 +232,11 @@ export async function studio(o: { file: string; port?: number }) {
     "GET /manifest.webmanifest": (_q, res) => {
       res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "no-store" });
       res.end(JSON.stringify({ name: "AgentLoops", short_name: "AgentLoops", display: "standalone", start_url: "./", background_color: "#1d2226", theme_color: "#1d2226", icons: [{ src: "icon.svg", sizes: "any", type: "image/svg+xml" }] }));
+    },
+    // sampled instruments (ui/samples/<sound>/<root>[-p].mp3); the [\w-] check keeps requests inside that folder
+    "GET /ui/samples/([\\w-]+)/([\\w-]+)\\.mp3": (_q, res, m) => {
+      let b: Buffer; try { b = readFileSync(new URL(`samples/${m[1]}/${m[2]}.mp3`, UI)); } catch { return json(res, 404, { error: "not found" }); }
+      res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "no-store" }); res.end(b);
     },
     "GET /icon.svg": (_q, res) => { res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-store" }); res.end(readFileSync(new URL("icon.svg", UI))); },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {

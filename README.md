@@ -102,3 +102,7 @@ Press **Space** to play. **Shift+click ⤓** saves an MP3 next to the song. It i
 - [docs/manual.md](docs/manual.md): the manual for agents and people, covering the project format, every MCP tool and how to make music. `init` copies it into the skill or `AGENTS.md`.
 - [SPEC.md](SPEC.md): the full design, with the FL Studio research behind it.
 - [docs/case-study-blender-mcp.md](docs/case-study-blender-mcp.md): why the studio is the MCP host.
+
+## Credits
+
+The `piano` and `sax` sounds are recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0) and the University of Iowa Musical Instrument Samples. Details in [ui/samples/NOTICE](ui/samples/NOTICE).

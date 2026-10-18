@@ -8,6 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { studio } from "../src/studio.ts";
 import { which } from "../src/export.ts";
+import { SOUNDS } from "../src/project.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const ffmpeg = which("ffmpeg"), chromium = which("chromium", "chromium-browser", "google-chrome", "google-chrome-stable");
@@ -172,6 +173,33 @@ test("audio_export with no tab renders in headless Chromium", { skip: chromium ?
     assert.ok(r.seconds > 1 && r.seconds < 6, JSON.stringify(r)); // one 240 BPM bar (1 s) plus the 2 s tail
     assert.ok(b.subarray(44).some((x) => x !== 0), "the render is not silent");
     if (ffmpeg) assert.equal((await m.call("audio_export", { file: "tiny.mp3" })).format, "mp3");
+  } finally { await m.client.close(); await s.close(); }
+});
+
+test("every sound renders: not silent, level within 10 dB of triangle", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
+  // ponytail: ±10 dB, not 6: today's `sub` sits at +7 dB and `pluck` at -9 dB of triangle (a decaying note over a 2 s bar). Retune those, then tighten
+  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums)
+  const key = (x: string) => (x === "drums" ? 36 : 60);
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Sounds", clock: { bpm: 120 },
+    channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: key(x), name: "n", template: "x" }] })),
+    patterns: [{ id: "p", lengthSteps: 16 * sounds.length, notes: Object.fromEntries(sounds.map((x, i) => [x, [{ start: `${i + 1}:01`, len: 192, key: key(x) }]])) }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "sounds.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24);
+    const rms = sounds.map((x, i) => {
+      let sum = 0, n = 0;
+      for (let o = 44 + i * BAR * rate * 4; o < 44 + (i + 1) * BAR * rate * 4; o += 2, n++) { const v = b.readInt16LE(o) / 32768; sum += v * v; } // a NaN sample is written as 0, so NaN shows up as silence
+      return Math.sqrt(sum / n);
+    });
+    const db = (v: number) => 20 * Math.log10(v), tri = rms[sounds.indexOf("triangle")];
+    t.diagnostic(sounds.map((x, i) => `${x} ${db(rms[i]).toFixed(1)} dB (${(db(rms[i]) - db(tri)).toFixed(1)})`).join(", "));
+    sounds.forEach((x, i) => {
+      assert.ok(rms[i] > 1e-4, `${x}: bar ${i + 1} is silent`);
+      assert.ok(Math.abs(db(rms[i]) - db(tri)) <= 10, `${x}: ${db(rms[i]).toFixed(1)} dB vs triangle ${db(tri).toFixed(1)} dB`);
+    });
   } finally { await m.client.close(); await s.close(); }
 });
 

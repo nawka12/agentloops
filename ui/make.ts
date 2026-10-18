@@ -1,7 +1,7 @@
 // Studio v2b "Make music": the channel window, plugin and processor pickers, context menus, the slot and loop editors, the Browser.
 // Every edit is one JSON Patch as source "studio" (one undo step). Text fields commit on blur or after 600 ms idle; validation errors show inline and never block.
 import { S, curPattern, html, openWin, paint, patch, post, ptr, toggleWin } from "./main.ts";
-import { SOUNDS } from "./sound.ts";
+import { FAMILIES } from "./sound.ts";
 
 export const cat: any = { plugins: [], presets: [] };
 export const loadCatalog = async () => { try { Object.assign(cat, await (await fetch("/api/catalog")).json()); } catch {} };
@@ -186,7 +186,8 @@ export function ChannelWin(id: string) {
       ${field(fk("name"), c.name, (v) => { const b = busOf(c.output), bi = ids(S.project.mixer?.buses).indexOf(c.output); // the channel's own bus keeps its name in step
         return patch([...setAt(S.project, K("name"), v || undefined), ...(v && bi >= 0 && b.name === c.name ? setAt(S.project, ["mixer", "buses", bi, "name"], v) : [])], `renamed ${id} to ${v}`); }, { label: "Name", err: P("name") })}
       ${row("Color", html`<input type="color" value=${c.color ?? "#9aa5ae"} onChange=${(e: any) => set(K("color"), e.target.value, `color of ${id}`)} aria-label="Color"/>`)}
-      ${row("Sound", html`${sel(c.sound ?? "auto", [["auto", "auto (by generator)"], ...SOUNDS.map((s) => [s, s] as [string, string])], (v) => set(K("sound"), v === "auto" ? undefined : v, `sound of ${id}: ${v}`), "The instrument this channel plays while its agents work (drums: General MIDI keys)", "Sound")}
+      ${row("Sound", html`<select value=${c.sound ?? "auto"} onChange=${(e: any) => { const v = e.target.value; set(K("sound"), v === "auto" ? undefined : v, `sound of ${id}: ${v}`); }} data-hint="The instrument this channel plays while its agents work (drums: General MIDI keys; piano and sax are sampled, and the note's velocity sets the dynamics)" aria-label="Sound">
+          <option value="auto">auto (by generator)</option>${Object.entries(FAMILIES).map(([f, ss]) => html`<optgroup label=${f}>${ss.map((s) => html`<option value=${s}>${s}</option>`)}</optgroup>`)}</select>
         <input type="number" min="0" max="1" step="0.05" value=${c.gain ?? 1} aria-label="Gain" title="Gain" style="width:4.5em" onChange=${(e: any) => set(K("gain"), +e.target.value === 1 ? undefined : +e.target.value, `gain of ${id}`)}/>`, "Sound and gain (0–1)")}
       ${row("Generator", html`${sel(pl, gens.map((g: any) => [g.id, `${LABEL[g.id] ?? g.id} (${g.id})`] as [string, string]), switchPlugin, "Switching keeps the instructions and asks before it discards the params", "Generator")}${keyBadge(needsKey(pl))}`)}
       ${params}</div>`;

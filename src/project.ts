@@ -43,7 +43,7 @@ export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
 const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
 // channel `sound` (sonification instrument); keep in sync with SOUNDS in ui/sound.ts
-const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums"];
+export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax"];
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
 

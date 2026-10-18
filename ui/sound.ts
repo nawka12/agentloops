@@ -8,7 +8,16 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const SOUNDS = ["triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums"] as const;
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "sax"], keys: ["piano"], bass: ["sub"], pad: ["supersaw"], mallets: ["pluck", "bell"], drums: ["drums"] };
+export const SOUNDS = Object.values(FAMILIES).flat();
+const ONESHOT = new Set(["pluck", "bell", "drums"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
+const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
+// Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft). The recording carries its own decay, so the envelope only
+// holds it and releases at the note's end. ponytail: no loop points, so a note longer than its recording just ends with it; add crossfade loops if long held sax notes matter
+const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?: number }> = {
+  piano: { roots: span(21, 105), rel: 0.3, peak: 0.4 },
+  sax: { roots: span(49, 79), rel: 0.12, peak: 0.45, wet: 0.25 },
+};
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
 /** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks, a reverb send, shared noise. */
@@ -28,7 +37,7 @@ function rig(c: BaseAudioContext, vol: number): Rig {
 let ac: AudioContext | null = null, R: Rig;
 /** Browsers only allow audio after a user gesture: call this from Play, Space and the speaker button. */
 export function unlock() {
-  if (!ac) { try { ac = new AudioContext(); } catch { return; } R = rig(ac, sound.vol); }
+  if (!ac) { try { ac = new AudioContext(); } catch { return; } R = rig(ac, sound.vol); loadSamples(ac, want); }
   ac.resume().catch(() => {});
 }
 const live = () => !!ac && sound.on && ac.state === "running";
@@ -82,6 +91,36 @@ function sustain(r: Rig, kind: string, key: number, t: number, lvl: number) {
   oscs.forEach((x) => x.start(t));
   return { g, oscs, rel: s.rel };
 }
+// Sample buffers, cached per audio context. A failed download stays missing until reload (ponytail: no retry).
+const bank = new WeakMap<BaseAudioContext, Map<string, { b?: AudioBuffer; p?: Promise<void> }>>();
+const sampleName = (kind: string, root: number, soft: boolean) => `${kind}/${root}${soft ? "-p" : ""}`;
+function fetchSample(c: BaseAudioContext, f: string) {
+  let m = bank.get(c); if (!m) bank.set(c, (m = new Map()));
+  if (!m.has(f)) { const e: { b?: AudioBuffer; p?: Promise<void> } = {}; m.set(f, e); e.p = fetch(`/ui/samples/${f}.mp3`, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then((a) => c.decodeAudioData(a)).then((b) => { e.b = b; }).catch(() => {}); }
+  return m.get(f)!;
+}
+/** load every layer of the given sampled sounds on c; resolves to the files that failed. ponytail: all roots, both layers, even if a song uses few */
+async function loadSamples(c: BaseAudioContext, kinds: Iterable<string>) {
+  const es = [...new Set(kinds)].filter((k) => SAMPLED[k]).flatMap((k) => SAMPLED[k].roots.flatMap((r) => [false, true].map((soft) => sampleName(k, r, soft)))).map((f) => [f, fetchSample(c, f)] as const);
+  await Promise.all(es.map(([, e]) => e.p));
+  return es.filter(([, e]) => !e.b).map(([f]) => f);
+}
+const want = new Set<string>();
+/** Live: the song uses these sounds (a channel's `sound`s; unknown and synth ones are ignored). Loads now, or once Play unlocks the audio. */
+export function preload(sounds: (string | undefined)[]) { for (const s of sounds) if (s && SAMPLED[s]) want.add(s); if (ac) loadSamples(ac, want); }
+/** one sampled note: the nearest recorded root, repitched; null if its buffer isn't loaded (yet) */
+function sampled(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number) {
+  const s = SAMPLED[kind], lo = s.roots[0], hi = s.roots[s.roots.length - 1];
+  while (key < lo - 3) key += 12; while (key > hi + 3) key -= 12; // the edge roots may pitch 3 semitones outward (piano 106-108); beyond that, fold by octaves into the range
+  const root = s.roots.reduce((a, b) => (Math.abs(b - key) < Math.abs(a - key) ? b : a)), b = bank.get(r.c)?.get(sampleName(kind, root, vel < 0.4))?.b;
+  if (!b) return null;
+  const src = r.c.createBufferSource(), g = gain(r, 0.0001);
+  src.buffer = b; src.playbackRate.value = 2 ** ((key - root) / 12);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, s.peak * lvl * (0.5 + vel)), t + 0.005); // vel 0.5 is unity
+  src.connect(g); g.connect(r.out); if (s.wet) send(r, g, s.wet);
+  src.start(t);
+  return { g, oscs: [src] as AudioScheduledSourceNode[], rel: s.rel };
+}
 /** release at `at` (≥ now): hold whatever the envelope is doing at that moment, then fade. Offline, `at` is far ahead of the attack. */
 const release = (v: { g: GainNode; oscs: AudioScheduledSourceNode[]; rel: number }, now: number, at: number) => {
   const g: any = v.g.gain;
@@ -89,15 +128,16 @@ const release = (v: { g: GainNode; oscs: AudioScheduledSourceNode[]; rel: number
   else { g.cancelScheduledValues(Math.max(now, at)); g.setValueAtTime(Math.max(0.0001, g.value), Math.max(now, at)); } // ponytail: older engines jump to the current level
   g.exponentialRampToValueAtTime(0.0001, at + v.rel); v.oscs.forEach((x) => x.stop(at + v.rel + 0.05));
 };
-/** play one note of any instrument at time t on rig r; sustained kinds are returned for release, one-shots handle themselves */
-function note(r: Rig, kind: string, key: number, t: number, lvl: number) {
+/** play one note of any instrument at time t on rig r; sustained and sampled kinds are returned for release, one-shots handle themselves. vel only matters to sampled ones */
+function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5) {
   if (kind === "drums") { drum(r, key, t, lvl); return null; }
-  if (kind === "pluck" || kind === "bell") { (kind === "pluck" ? pluck : bell)(r, hz(key), t, lvl); return null; }
+  if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : bell)(r, hz(key), t, lvl); return null; }
+  if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel);
   return sustain(r, kind, key, t, lvl);
 }
 
 const tones = new Map<string, { g: GainNode; oscs: AudioScheduledSourceNode[]; rel: number; until: number }>();
-export type VoiceSound = { sound?: string; gain?: number; dur?: number };
+export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number };
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
 // Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
 // main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
@@ -115,9 +155,9 @@ const when = (at?: number) => { heard(at); return at == null ? ac!.currentTime :
 export function voiceStart(id: string, key: number, plugin: string, o: VoiceSound = {}, at?: number) {
   stats.events++;
   if (!live() || tones.has(id)) return;
-  const kind = kindOf(plugin, o.sound), sustained = !!SUSTAIN[kind] || !["drums", "pluck", "bell"].includes(kind);
-  if (sustained && tones.size >= MAX) return;
-  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1);
+  const kind = kindOf(plugin, o.sound);
+  if (!ONESHOT.has(kind) && tones.size >= MAX) return;
+  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel);
   stats.started++;
   if (!v) { stats.stopped++; if (kind === "drums" && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
@@ -177,13 +217,15 @@ export function chime() { stats.events++; if (!live()) return; ping([1568], "sin
 export function click(accent: boolean) { if (!live() || !sound.metro) return; ping([accent ? 1760 : 1175], "sine", accent ? 0.16 : 0.09, 0.05); stats.clicks++; }
 
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
-export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
+export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
 /** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat. A 2 s tail lets reverb ring out. */
 export async function renderWav(s: Score, rate = 44100): Promise<ArrayBuffer> {
   const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate);
   const c = new OfflineAudioContext(2, length, rate), r = rig(c, 0.8), chs = new Map(s.channels.map((x) => [x.id, x]));
+  const miss = await loadSamples(c, s.channels.map((x) => kindOf(x.plugin ?? "script", x.sound))); // decode before rendering starts
+  if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
   for (const n of [...s.notes].sort((a, b) => a.start - b.start)) { // time order: each kick's pump automation cancels what follows it
-    const ch = chs.get(n.ch), t = sec(n.start) + 0.05, v = note(r, kindOf(ch?.plugin ?? "script", ch?.sound), n.key, t, ch?.gain ?? 1);
+    const ch = chs.get(n.ch), t = sec(n.start) + 0.05, v = note(r, kindOf(ch?.plugin ?? "script", ch?.sound), n.key, t, ch?.gain ?? 1, n.vel);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
   }
   return wav(await c.startRendering());

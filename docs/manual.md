@@ -169,6 +169,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 - **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
   - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato).
   - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
+  - **Sampled:** `piano` (a grand piano, keys 21–108) and `sax` (an alto sax, keys 49–79). Real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness. A piano note rings out on its own and fades at the note's end; a sax note is one recording of 2.5–4 s, so a longer note ends early.
   - **`drums`, a GM kit:**
     - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
     - 38/40 snare
@@ -192,6 +193,13 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Half-time drums (kick on 1 and on the "and" of 3, snare and clap on beat 3, hats on 8ths).
   - Builds: a snare roll from quarters to 8ths to 16ths to 32nds, a riser, then a beat of silence before the drop.
   - Kawaii bass sits at 150–170 BPM.
+- **Jazz** (`piano`, `sax`, a `sub` bass, `drums`):
+  - Swing: write 8th notes at ticks 0 and 64 of each beat (96 ticks per beat).
+  - ii–V–I with rootless 9th/13th voicings (in C: Dm9 → G13 → Cmaj9).
+  - Walking bass on quarter notes.
+  - Ride "ding ding-a ding"; hi-hat (44) on 2 and 4.
+  - Comp on the "and" of 2 and 4.
+- **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
 - **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
 
 ```json
