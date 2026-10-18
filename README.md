@@ -14,15 +14,19 @@ Use it from **Claude Code**, Codex, Cursor, opencode or any MCP client. The codi
 
 ## Install
 
+Straight from GitHub (AgentLoops isn't on the npm registry yet):
+
 ```sh
-npm install -g agentloops
+npm install -g --allow-git=root github:nawka12/agentloops
 ```
+
+npm 12 refuses git installs unless you allow them, and `--allow-git=root` allows only this one. If npm then warns that the package's `prepare` script was blocked, you can ignore it: the package was already built while it was installed.
 
 From a clone:
 
 ```sh
-npm install
-npm pack && npm install -g ./agentloops-1.0.0.tgz
+npm install   # also builds dist/
+npm link
 ```
 
 You can also skip the install and run `node src/cli.ts <command>` from the clone.

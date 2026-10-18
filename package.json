@@ -22,9 +22,9 @@
     "docs/manual.md"
   ],
   "scripts": {
-    "prepack": "npm run build",
     "test": "node --test test/*.test.ts",
-    "build": "node --disable-warning=ExperimentalWarning scripts/build.mjs"
+    "build": "node --disable-warning=ExperimentalWarning scripts/build.mjs",
+    "prepare": "npm run build"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.135.0",
