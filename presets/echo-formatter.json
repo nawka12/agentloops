@@ -1,0 +1,26 @@
+{
+  "name": "Echo / formatter",
+  "description": "Reformats whatever it reads from its first input into a Markdown block. Free script.",
+  "needsKey": false,
+  "color": "#c0c7cc",
+  "channel": {
+    "generator": {
+      "plugin": "script",
+      "params": {
+        "code": "const x = Object.values(ctx.inputs)[0];\nreturn `## Result\\n\\n${x?.text ?? ctx.prompt}`;"
+      }
+    },
+    "keymap": [
+      {
+        "key": 60,
+        "name": "Format",
+        "template": "{{note.text}}"
+      }
+    ],
+    "inputs": [],
+    "context": "fresh",
+    "polyphony": 4,
+    "retries": 0,
+    "onFail": "stop"
+  }
+}

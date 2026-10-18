@@ -1,0 +1,26 @@
+{
+  "name": "Script step",
+  "description": "A deterministic JavaScript step: free, instant, good for sketching a song before real models.",
+  "needsKey": false,
+  "color": "#93e04a",
+  "channel": {
+    "generator": {
+      "plugin": "script",
+      "params": {
+        "code": "return `pass ${ctx.loop.pass}: ${ctx.prompt}`;"
+      }
+    },
+    "keymap": [
+      {
+        "key": 60,
+        "name": "Run",
+        "template": "{{note.text}}"
+      }
+    ],
+    "inputs": [],
+    "context": "fresh",
+    "polyphony": 4,
+    "retries": 0,
+    "onFail": "stop"
+  }
+}

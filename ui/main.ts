@@ -3,6 +3,7 @@
 import { h, render } from "preact";
 import htm from "htm";
 import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
+import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
 import { blip, chime, click, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
 export const html = htm.bind(h);
@@ -28,19 +29,33 @@ export const S: any = {
   run: newRun(), monitor: [] as any[], monitorBus: "master", monTab: "master", preview: new Map<string, string>(),
   runs: [] as any[], // one entry per run (a PAT repeat or a song play): {id, repeat, master: [frames], ended, cached}
   flash: new Set<string>(), lastHarness: null as any, bpm: null as number | null, showErrors: false,
+  loop: null as any, repeats: 0, capUsd: null as number | null, notice: null as string | null, meters: {} as Record<string, any>, sendMode: "final",
+  menu: null as any, picker: null as any, slotEd: null as any, pop2: null as any, wins: {} as Record<string, any>,
 };
 export const playing = () => S.run.running || S.serverPlaying;
 export const bpm = () => S.bpm ?? S.project?.clock?.bpm ?? 120;
 
-async function post(path: string, body: any = {}) {
+export async function post(path: string, body: any = {}) {
   const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) setHint(`${path.slice(5)} refused: ${String((await r.json()).error).split("\n")[0]}`);
   return r.ok;
 }
 /** Every studio edit: one JSON Patch, one undo step, source "studio". */
-export const patch = (ops: any[], summary: string) => ops.length && post("/api/patch", { ops, summary });
-const play = () => (unlock(), playing()) ? post("/api/stop")
-  : post("/api/run", { ...(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id, cache: S.cache ? "prefer" : "fresh" }), pace: "project" });
+export const patch = (ops: any[], summary: string, extra: object = {}): Promise<boolean> => (ops.length ? post("/api/patch", { ops, summary, ...extra }) : Promise.resolve(false));
+/** the PAT loop's spend cap: set by clicking the cost meter, else 3 x the run budget, else $1 (the server applies the same default) */
+export const loopCap = () => S.capUsd ?? (S.project?.budgets?.runUsd > 0 ? S.project.budgets.runUsd * 3 : 1);
+let warned = (() => { try { return sessionStorage.getItem("agentloops.loop.warned") === "1"; } catch { return false; } })();
+function play() {
+  unlock();
+  if (playing()) return post("/api/stop");
+  S.notice = null;
+  if (S.mode !== "pat") return post("/api/run", { arrangement: S.project.arrangements?.[0]?.id, cache: S.cache ? "prefer" : "fresh", pace: "project" });
+  if (!warned && (S.project.channels ?? []).some((c: any) => c.generator?.plugin === "llm.agent" && !c.mute)) { // once per session: looping real models costs money
+    if (!confirm(`PAT play repeats this pattern until you stop it, and each repeat runs its llm.agent channels again, which costs money. Voices whose prompt and inputs did not change replay from the cache for free. The loop stops by itself at $${loopCap().toFixed(2)} (click the cost meter to change it). Play?`)) return;
+    warned = true; try { sessionStorage.setItem("agentloops.loop.warned", "1"); } catch {}
+  }
+  return post("/api/run", { pattern: curPattern()?.id, pace: "project", capUsd: loopCap(), ...(S.repeats ? { repeats: S.repeats } : {}) });
+}
 export const curPattern = () => (S.project?.patterns ?? []).find((p: any) => p.id === S.pattern) ?? S.project?.patterns?.[0];
 export const chColor = (id: string) => (S.project?.channels ?? []).find((c: any) => c.id === id)?.color ?? "#9aa5ae";
 export const chName = (id: string) => (S.project?.channels ?? []).find((c: any) => c.id === id)?.name ?? id;
@@ -58,6 +73,17 @@ const audible = (ch: string) => { const cs: any[] = S.project?.channels ?? [], c
 const plugin = (ch: string) => (S.project?.channels ?? []).find((c: any) => c.id === ch)?.generator?.plugin;
 function applyEvent(e: any, live: boolean) {
   const r: Run = S.run, hist = S.runs.find((x: any) => x.id === e.runId);
+  if (e.type === "song.open") { // the studio switched songs: earlier runs belong to the old one
+    Object.assign(S, { run: newRun(), runs: [], monitor: [], meters: {}, voice: null, channel: null, pattern: null, loop: null });
+    S.preview.clear();
+    if (live) { for (const k of Object.keys(S.wins)) if (k.startsWith("ch:")) delete S.wins[k]; loadSongs(); }
+    return;
+  }
+  if (e.type === "loop.end" && live && e.reason !== "stopped") S.notice = `Loop ended: ${e.reason}`;
+  if (e.type === "frame" && e.bus) { // meters: each frame kicks the level, which decays; the peak holds (see tick)
+    const m = (S.meters[e.bus] ??= { lv: 0, at: 0, pk: 0, pkAt: 0 }), lv = Math.min(1, m.lv * Math.exp(-(e.at - m.at) / 900) + 0.34);
+    Object.assign(m, { lv, at: e.at }); if (lv >= peak(m, e.at)) Object.assign(m, { pk: lv, pkAt: e.at });
+  }
   if (e.type === "run.start") { S.run = newRun(e); S.runs.push({ id: e.runId, repeat: e.repeat, pattern: e.pattern, master: [] }); if (S.runs.length > 60) S.runs.shift(); }
   if (e.type === "run.end" && hist) Object.assign(hist, { ended: true, cached: !e.summary?.voicesRun && e.summary?.cacheHits > 0 });
   if (e.type === "frame" && e.bus === "master" && e.final && hist) hist.master.push(e);
@@ -123,7 +149,7 @@ function tryFlash() {
 export const fl = (id: string) => (S.flash.has(id) ? " flash" : "");
 function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
-  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running });
+  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null });
   if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;
   if (ids.size) { pending = { ids, at: Date.now() }; tryFlash(); }
@@ -133,27 +159,34 @@ function setState(st: any, live: boolean) {
 export const WINS: Record<string, { title: string; key: string; panel: string }> = {
   playlist: { title: "Playlist", key: "F5", panel: "playlist" }, rack: { title: "Channel rack", key: "F6", panel: "rack" }, piano: { title: "Piano roll", key: "F7", panel: "pianoroll" },
   mixer: { title: "Mixer", key: "F9", panel: "mixer" }, tracer: { title: "Tracer", key: "F10", panel: "tracer" }, monitor: { title: "Monitor", key: "F11", panel: "monitor" },
+  browser: { title: "Browser", key: "Alt+F8", panel: "browser" },
 };
 const KEYS: Record<string, string> = Object.fromEntries(Object.entries(WINS).map(([id, w]) => [w.key, id]));
 function defaultWins() {
   // the Playlist's first tracks stay visible; rack and piano roll over its left side, Monitor right, Mixer bottom
   const W = innerWidth, H = innerHeight - 64, mw = Math.min(440, W * 0.3), chs: any[] = S.project?.channels ?? [];
-  const rh = 64 + 30 * Math.min(8, chs.length || 3), keys = Math.max(3, ...chs.map((c) => c.keymap?.length ?? 0)), py = 200 + rh;
+  const rh = 94 + 30 * Math.min(8, chs.length || 3), keys = Math.max(3, ...chs.map((c) => c.keymap?.length ?? 0)), py = 200 + rh;
   return {
     playlist: { open: true }, rack: { x: 124, y: 186, w: Math.min(700, W - mw - 150), h: rh, open: true, z: 3 },
     piano: { x: 124, y: py, w: Math.min(1000, W - mw - 150), h: Math.max(160, Math.min(H - 236 - py, 70 + 34 * Math.min(12, keys))), open: true, z: 2 },
-    mixer: { x: 12, y: H - 256, w: Math.min(W - mw - 36, 40 + 126 * ((S.project?.mixer?.buses?.length ?? 0) + 1)), h: 248, open: true, z: 4 }, monitor: { x: W - mw - 12, y: 8, w: mw, h: H - 16, open: true, z: 5 },
-    tracer: { x: 160, y: 120, w: Math.min(980, W - 320), h: 420, open: false, z: 1 },
+    mixer: { x: 12, y: H - 296, w: Math.min(W - mw - 36, Math.max(640, 40 + 126 * ((S.project?.mixer?.buses?.length ?? 0) + 1))), h: 288, open: true, z: 4 }, monitor: { x: W - mw - 12, y: 8, w: mw, h: H - 16, open: true, z: 5 },
+    tracer: { x: 160, y: 120, w: Math.min(980, W - 320), h: 420, open: false, z: 1 }, browser: { x: 0, y: 0, w: 250, h: H, open: false, z: 6 },
   } as Record<string, any>;
 }
 const LS = "agentloops.windows.v1";
-const loadWins = () => { const d = defaultWins(); try { const s = JSON.parse(localStorage.getItem(LS) ?? "{}"); for (const k in d) Object.assign(d[k], s[k]); } catch {} return d; };
+const loadWins = () => { const d = defaultWins(); try { const s = JSON.parse(localStorage.getItem(LS) ?? "{}"); for (const k in d) Object.assign(d[k], s[k]); for (const k in s) if (k.startsWith("ch:")) d[k] = s[k]; } catch {} return d; };
 const saveWins = () => { try { localStorage.setItem(LS, JSON.stringify(S.wins)); } catch {} };
 let zTop = 10;
 export function front(id: string) {
   const w = S.wins[id];
   if (S.panel !== id) { S.panel = id; paint(); }
   if (id !== "playlist" && w.z !== zTop) { w.z = ++zTop; paint(); }
+}
+/** open (creating) a floating window that is not in WINS, like a channel window; new ones cascade */
+export function openWin(id: string, w = 560, h = 470) {
+  const n = Object.keys(S.wins).filter((k) => k.startsWith("ch:") && S.wins[k].open).length;
+  S.wins[id] ??= { x: Math.min(innerWidth - w - 20, 300 + 26 * n), y: 60 + 26 * n, w, h };
+  toggleWin(id, true);
 }
 export function toggleWin(id: string, show?: boolean) {
   const w = S.wins[id]; w.open = show ?? !w.open;
@@ -174,14 +207,14 @@ function dragWin(ev: PointerEvent, id: string, mode: "move" | "size") {
   const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); saveWins(); };
   addEventListener("pointermove", mv); addEventListener("pointerup", up);
 }
-function Win({ id, sub, children }: any) {
-  const w = S.wins[id], d = WINS[id];
-  if (!w.open) return null;
-  return html`<section id=${id} class=${`win${S.panel === id ? " front" : ""}`} tabindex="-1" aria-label=${`${d.title}, ${d.key}`}
-      style=${`left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px;z-index:${10 + w.z}`} onPointerDown=${() => front(id)}>
-    <header class="tbar" onPointerDown=${(e: PointerEvent) => dragWin(e, id, "move")} data-hint=${`${d.title}: drag the title bar to move, the corner to resize. ${d.key} shows or hides it.`}>
-      <b>${d.title}</b><span class="sub">${sub}</span><kbd>${d.key}</kbd>
-      <button class="x" onClick=${() => toggleWin(id, false)} aria-label=${`Close ${d.title}`} data-hint=${`Close (${d.key} brings it back)`}>×</button></header>
+function Win({ id, sub, children, title, tag, cls, style }: any) {
+  const w = S.wins[id], d = WINS[id] ?? { title, key: "" };
+  if (!w?.open) return null;
+  return html`<section id=${id} class=${`win${cls ? ` ${cls}` : ""}${S.panel === id ? " front" : ""}`} tabindex="-1" aria-label=${d.key ? `${d.title}, ${d.key}` : d.title}
+      style=${`left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px;z-index:${10 + w.z};${style ?? ""}`} onPointerDown=${() => front(id)}>
+    <header class="tbar" onPointerDown=${(e: PointerEvent) => dragWin(e, id, "move")} data-hint=${`${d.title}: drag the title bar to move, the corner to resize.${d.key ? ` ${d.key} shows or hides it.` : ""}`}>
+      <b>${d.title}</b><span class="sub">${sub}</span>${tag ?? html`<kbd>${d.key}</kbd>`}
+      <button class="x" onClick=${() => toggleWin(id, false)} aria-label=${`Close ${d.title}`} data-hint=${d.key ? `Close (${d.key} brings it back)` : "Close"}>×</button></header>
     <div class="wbody">${children}</div>
     <i class="grip" onPointerDown=${(e: PointerEvent) => dragWin(e, id, "size")} aria-hidden="true"></i></section>`;
 }
@@ -221,8 +254,14 @@ function Toolbar() {
       <span class="seg" role="group" aria-label="Play mode (L)">
         <button aria-pressed=${S.mode === "pat"} onClick=${() => { S.mode = "pat"; paint(); }} data-hint="Pattern mode: loop the selected pattern until Stop (L)">PAT</button><button aria-pressed=${S.mode === "song"} onClick=${() => { S.mode = "song"; paint(); }} data-hint="Song mode: play the arrangement in the Playlist once (L)">SONG</button>
       </span>
-      <select aria-label="Pattern" value=${curPattern()?.id} onChange=${(e: any) => { S.pattern = e.target.value; paint(); }} data-hint="Selected pattern: shown in the rack and piano roll, played in PAT mode, placed by clicking the Playlist">
-        ${pats.map((p: any) => html`<option value=${p.id}>${p.name ?? p.id}</option>`)}</select>
+      <span class="patsel">
+        <select aria-label="Pattern" value=${curPattern()?.id} onChange=${(e: any) => { S.pattern = e.target.value; paint(); }} onContextMenu=${patternMenu} data-hint="Selected pattern: shown in the rack and piano roll, played in PAT mode, placed by clicking the Playlist. Right-click for clone, rename and delete.">
+          ${pats.map((p: any) => html`<option value=${p.id}>${p.name ?? p.id}</option>`)}</select>
+        <button onClick=${newPattern} aria-label="New pattern" data-hint="New empty pattern">+</button>
+        <button onClick=${(e: MouseEvent) => openLoop(e, "pattern")} disabled=${!curPattern()} aria-label="Pattern length and loop" data-hint="Pattern length and loop: max passes, until">⟳</button>
+        <button onClick=${patternMenu} aria-label="Pattern menu" data-hint="New, clone, rename or delete the pattern">⋯</button></span>
+      <select class="reps" aria-label="Stop after N repeats" value=${String(S.repeats)} onChange=${(e: any) => { S.repeats = +e.target.value; paint(); }} data-hint="PAT play: stop after this many repeats (∞ loops until Stop or the spend cap)">
+        ${[0, 1, 2, 3, 4, 8, 16].map((n) => html`<option value=${String(n)}>${n ? `×${n}` : "×∞"}</option>`)}</select>
     </div>
     <div class="lcd" data-hint="Song position bar:step:tick, the repeat (PAT loop) and pass, and the elapsed time of the run">
       <span class="big" id="lcd-pos">1:01:00</span>
@@ -244,10 +283,18 @@ function Toolbar() {
       <button onClick=${() => post("/api/undo")} disabled=${!S.project} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶</button>
       <label class="tog" data-hint="Song mode: replay unchanged voices from earlier takes instead of running them again (PAT loops always do)"><input type="checkbox" checked=${S.cache} onChange=${(e: any) => { S.cache = e.target.checked; }}/>Cache</label>
     </div>
-    <div class="cpu" role="meter" aria-label="Run cost against budget" aria-valuenow=${r.cost} aria-valuemin="0" aria-valuemax=${budget ?? 0}
+    ${S.mode === "pat" ? (() => {
+      const lp = S.loop, cap = lp?.running ? lp.capUsd : loopCap(), spent = lp ? lp.spentUsd + (lp.running && r.running ? r.cost : 0) : 0, lpct = Math.min(100, (spent / cap) * 100);
+      return html`<button class="cpu loopcap" role="meter" aria-label="This loop's spend against its cap" aria-valuenow=${spent} aria-valuemin="0" aria-valuemax=${cap}
+        onClick=${() => { const v = prompt("Spend cap for a PAT loop, in dollars: the loop stops when its repeats together reach it", cap.toFixed(2)); if (v != null && +v > 0) { S.capUsd = +v; paint(); } }}
+        data-hint=${`This loop: $${spent.toFixed(4)} of its $${cap.toFixed(2)} spend cap, over every repeat (this repeat: $${r.cost.toFixed(4)} of the $${budget ?? "—"} run budget). Click to change the cap.`}>
+        <span class="bars">${Array.from({ length: 10 }, (_, i) => html`<i class=${i * 10 < lpct ? (i >= 8 ? "hot" : "lit") : ""}></i>`)}</span>
+        <span class="num"><small>this loop</small> $${spent.toFixed(2)}<small>/ $${cap.toFixed(2)}</small></span></button>`;
+    })() : html`<div class="cpu" role="meter" aria-label="Run cost against budget" aria-valuenow=${r.cost} aria-valuemin="0" aria-valuemax=${budget ?? 0}
       data-hint=${`Cost of the ${r.running ? "current" : "last"} run: $${r.cost.toFixed(4)} of the $${budget ?? "—"} run budget`}>
       <span class="bars">${Array.from({ length: 10 }, (_, i) => html`<i class=${i * 10 < pct ? (i >= 8 ? "hot" : "lit") : ""}></i>`)}</span>
-      <span class="num">$${r.cost.toFixed(2)}<small>/ ${budget != null ? `$${Number(budget).toFixed(2)}` : "—"}</small></span></div>
+      <span class="num">$${r.cost.toFixed(2)}<small>/ ${budget != null ? `$${Number(budget).toFixed(2)}` : "—"}</small></span></div>`}
+    ${S.notice ? html`<button class="notice" role="status" onClick=${() => { S.notice = null; paint(); }} data-hint="Click to dismiss">${S.notice}</button>` : null}
     <button class=${`errs ${S.errors.length ? "bad" : "ok"}`} onClick=${() => { S.showErrors = !S.showErrors; paint(); }} aria-expanded=${S.showErrors} data-hint="Validation errors: click for path, message and fix">${S.errors.length ? `⚠ ${S.errors.length}` : "✓"}</button>
     <span class=${`harness${live ? " live" : ""}`} data-hint=${h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}` : "Edits and runs from Claude Code or any MCP client show up here"}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness"}</span>
     ${wt.length ? html`<span class="paused" role="status" data-hint="The run is paused until the harness answers with voice_reply. Stop (Space) ends it.">${waitFor(wt[0])}${wt.length > 1 ? ` · ${wt.length} voices` : ""}</span>` : null}
@@ -270,11 +317,16 @@ function App() {
       <${Win} id="mixer" sub=${`${(S.project?.mixer?.buses?.length ?? 0) + 1} buses · monitoring ${mb}`}>${Mixer()}<//>
       <${Win} id="tracer" sub=${S.latest ? `take ${S.latest.run.id}` : ""}>${Tracer()}<//>
       <${Win} id="monitor" sub=${S.monTab === "live" ? "live, this pass" : S.monTab === "bus" ? `bus ${mb}` : "Master"}>${Monitor()}<//>
-    </main>`;
+      <${Win} id="browser" sub="drag or double-click">${Browser()}<//>
+      ${Object.keys(S.wins).filter((k) => k.startsWith("ch:") && S.wins[k].open).map((k) => {
+        const c = (S.project.channels ?? []).find((x: any) => x.id === k.slice(3));
+        return html`<${Win} key=${k} id=${k} cls="chwin" title=${c?.name ?? k.slice(3)} style=${`--c:${c?.color ?? "#9aa5ae"}`} sub=${c ? `→ ${c.output && c.output !== "master" ? (S.project.mixer?.buses ?? []).find((x: any) => x.id === c.output)?.name ?? c.output : "Master"}` : "deleted"} tag=${html`<span class="plug">${c?.generator?.plugin ?? "—"}</span>`}>${ChannelWin(k.slice(3))}<//>`;
+      })}
+    </main>${Menu()}${Picker()}${SlotEditor()}${LoopPop()}`;
 }
 
 let hintText = "";
-const DEFAULT_HINT = "Space play/stop · L pattern/song · Ctrl+Z undo · F5 playlist · F6 rack · F7 piano roll · F9 mixer · F10 tracer · F11 monitor";
+const DEFAULT_HINT = "Space play/stop · L pattern/song · Ctrl+Z undo · F5 playlist · F6 rack · F7 piano roll · F8 add channel · Alt+F8 browser · F9 mixer · F10 tracer · F11 monitor";
 export const setHint = (t: string) => { if (t !== hintText) { hintText = t; paint(); } };
 
 let queued = false;
@@ -307,6 +359,8 @@ export function head() {
   const mpt = 60000 / r.pace / 96, t = r.tick + (Date.now() - r.at) / mpt, next = points(r).find((x: number) => x > r.tick) ?? r.tick;
   return { t: Math.min(t, next), stalled: t > next + 150 / mpt };
 }
+/** a meter's held peak: holds 1.5 s, then falls at half a meter per second */
+function peak(m: any, now: number) { const t = now - m.pkAt; return t < 1500 ? m.pk : Math.max(0, m.pk - (t - 1500) / 2000); }
 function tick() {
   requestAnimationFrame(tick);
   if (!S.project) return;
@@ -323,6 +377,10 @@ function tick() {
   const beat = r.running && r.pace ? Math.floor(t / 96) : -1; // metronome: a click per beat while the head moves, accent on the bar
   if (beat !== lastBeat) { if (beat >= 0 && !stalled) click(beat % 4 === 0); lastBeat = beat; }
   document.querySelectorAll<HTMLElement>(".leds i").forEach((el, i) => el.classList.toggle("on", i === step));
+  for (const el of document.querySelectorAll<HTMLElement>(".meter[data-bus]")) { // decaying level, held peak
+    const m = S.meters[el.dataset.bus!], now = Date.now(), lv = m ? m.lv * Math.exp(-(now - m.at) / 900) : 0, pk = m ? Math.max(lv, peak(m, now)) : 0, [a, b, c] = el.children as any;
+    if (a) a.style.height = `${lv * 100}%`; if (b) b.style.height = `${lv * 86}%`; if (c) { c.style.bottom = `calc(${pk * 100}% - 2px)`; c.style.opacity = pk > 0.02 ? "1" : "0"; }
+  }
   const now = Date.now(); // hits (a voice starting, a frame reaching a bus) fade out over 900 ms; JS-driven so every frame and screenshot agrees
   document.querySelectorAll<HTMLElement>(".hit").forEach((el) => { el.style.opacity = String(Math.max(0, 1 - (now - +el.dataset.t!) / 900)); });
   const busy = stalled ? [...new Set([...r.voices.values()].filter((v: any) => v.status === "running" || v.status === "waiting").map((v: any) => chName(v.channel)))] : [];
@@ -366,16 +424,23 @@ document.addEventListener("focusin", hintOf);
 document.addEventListener("keydown", (ev) => {
   const t = ev.target as HTMLElement;
   if (KEYS[ev.key] && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); return toggleWin(KEYS[ev.key]); }
+  if (ev.key === "F8") { ev.preventDefault(); return ev.altKey ? toggleWin("browser") : openPicker("gen"); }
   if (t.closest("input, select, textarea, [contenteditable]")) return;
   if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return void post("/api/undo"); }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
   else if (ev.key === "l" || ev.key === "L") { S.mode = S.mode === "pat" ? "song" : "pat"; paint(); }
-  else if (ev.key === "Escape") { S.showErrors = false; paint(); }
+  else if (ev.key === "Escape") { Object.assign(S, { showErrors: false, menu: null, picker: null, slotEd: null, pop2: null }); paint(); }
 });
+// a click outside closes the open menu, picker or popover (capture phase: before the click can open the next one)
+document.addEventListener("pointerdown", (e) => {
+  if ((e.target as HTMLElement).closest?.(".menu, .picker, .pop2") || !(S.menu || S.picker || S.slotEd || S.pop2)) return;
+  Object.assign(S, { menu: null, picker: null, slotEd: null, pop2: null }); paint();
+}, true);
 setInterval(() => S.project && paint(), 1000); // "3s ago" labels
 
 const boot = JSON.parse(document.getElementById("boot")?.textContent ?? "null") ?? await (await fetch("/api/state")).json();
+await loadCatalog();
 setState(boot, false);
 S.wins = loadWins(); zTop = Math.max(...Object.values<any>(S.wins).map((w) => w.z ?? 0));
 for (const e of boot.events ?? []) onEvent(e, false);
@@ -386,3 +451,4 @@ const es = new EventSource("/api/events");
 es.addEventListener("state", (m) => { setState(JSON.parse(m.data), true); paint(); });
 es.addEventListener("event", (m) => { onEvent(JSON.parse(m.data), true); paint(); });
 es.addEventListener("focus", (m) => showFocus(JSON.parse(m.data)));
+es.addEventListener("loop", (m) => { S.loop = JSON.parse(m.data); paint(); });

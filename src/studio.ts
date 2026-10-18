@@ -1,22 +1,31 @@
 // `agentloops studio`: local web UI for watching an outside harness build and run a song.
 // Deviation from SPEC §13: Server-Sent Events (server -> browser) plus fetch POSTs (browser -> server) instead of a WebSocket.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
 import { stripTypeScriptTypes } from "node:module";
+import { fileURLToPath } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { score } from "./cli.ts";
-import { check, createHost, RANK } from "./host.ts";
-import { eventsFile, refresh, studioFile } from "./sync.ts";
+import { applyPatch, check, createHost, PLUGINS, RANK } from "./host.ts";
+import { starter } from "./project.ts";
+import { appendEvent, eventsFile, refresh, studioFile, writeJson } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
 const UI = new URL("../ui/", import.meta.url);
 const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript", ".js": "text/javascript" };
 const VENDOR = new URL("../node_modules/", import.meta.url);
+const DEMOS = new URL("../examples/", import.meta.url), PRESETS = new URL("../presets/", import.meta.url);
+const SONG = /^[\w.-]+\.alp\.json$/;
+/** `*.alp.json` files in a folder, with their song names */
+const songs = (d: string) => readdirSync(d).filter((f) => SONG.test(f)).sort().map((f) => { let name = f; try { name = JSON.parse(readFileSync(resolve(d, f), "utf8")).name ?? f; } catch {} return { file: f, name }; });
+const presets = () => readdirSync(PRESETS).filter((f) => f.endsWith(".json")).sort().map((f) => ({ id: f.slice(0, -5), ...JSON.parse(readFileSync(new URL(f, PRESETS), "utf8")) }));
 
 export async function studio(o: { file: string; port?: number }) {
-  const file = resolve(o.file), dir = dirname(file), log = eventsFile(dir);
+  let file = resolve(o.file);
+  const dir = dirname(file), log = eventsFile(dir);
   mkdirSync(dirname(log), { recursive: true });
+  if (!existsSync(file)) writeJson(file, starter(basename(file).replace(/\.alp\.json$|\.json$/, ""))); // `studio <new-file>` starts a song instead of erroring
   const clients = new Set<ServerResponse>();
   const send = (type: string, data: any) => { const msg = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`; for (const c of clients) c.write(msg); };
   // The studio owns the project: its UI actions and every relayed MCP call go through this host (one undo stack, one set of runs).
@@ -40,24 +49,40 @@ export async function studio(o: { file: string; port?: number }) {
     // ponytail: the latest take's frames (capped at 500) ride along with every state push; page them if takes get big
     const { takes, latest } = withTakes((t) => { const takes = t.list(10) as any[], g = takes[0] && t.get(takes[0].id); return { takes, latest: g && { ...g, frames: t.frames(takes[0].id).slice(-500) } }; });
     let sc = ""; try { sc = score(s.p); } catch (e: any) { sc = `cannot draw the score yet: ${e.message}`; }
-    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: playing() };
+    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: playing(), loop: loopInfo };
   };
   const playing = () => !!loop || [...host.runs.values()].some((r) => r.status === "running");
   // PAT Play loops until Stop, like FL: each repeat is a fresh paced run of the *current* project (edits land on the next repeat), cached voices replay free.
-  // ponytail: the budget applies per repeat, nothing caps the loop's total spend; add a loop-wide cap if llm.agent loops get left running
-  let loop: { stop: boolean } | null = null;
-  async function patLoop(pattern: string, pace: unknown) {
-    const me = (loop = { stop: false });
+  // A loop-wide spend cap (default 3 x budgets.runUsd, else $1) and an optional repeat count end it too; each repeat's budget is what is left of the cap.
+  let loop: { stop: boolean } | null = null, loopInfo: any = null;
+  async function patLoop(pattern: string, pace: unknown, o: { cap?: number; repeats?: number; cache?: string }) {
+    const me = (loop = { stop: false }), rb = host.cur().p.budgets?.runUsd;
+    const info = (loopInfo = { pattern, capUsd: o.cap! > 0 ? o.cap! : rb > 0 ? rb * 3 : 1, repeats: o.repeats! > 0 ? Math.floor(o.repeats!) : null, spentUsd: 0, repeat: 0, running: true, reason: null as string | null });
+    send("loop", info);
     try {
       for (let repeat = 1; !me.stop; repeat++) {
-        const { runId } = await host.call("run_start", { pattern, cache: "prefer", pace, wait: false }, { source: "studio", repeat });
+        if (info.repeats && repeat > info.repeats) { info.reason = `played ${info.repeats} repeat${info.repeats > 1 ? "s" : ""}`; break; }
+        info.repeat = repeat;
+        const { runId } = await host.call("run_start", { pattern, cache: o.cache ?? "prefer", pace, wait: false, budget: info.capUsd - info.spentUsd }, { source: "studio", repeat });
         const r = host.runs.get(runId);
         if (me.stop) r.ac.abort(); // Stop landed while this repeat was starting
         await r.promise;
-        if (r.status !== "done") break; // stopped, failed or over budget: the loop ends with it
+        info.spentUsd += r.result?.costUsd ?? r.costUsd;
+        send("loop", info); // the toolbar's loop meter
+        if (me.stop) break;
+        if (info.spentUsd >= info.capUsd) { info.reason = `loop spend cap reached: $${info.spentUsd.toFixed(4)} of $${info.capUsd.toFixed(2)}`; break; }
+        if (r.status !== "done") { info.reason = r.status === "failed" ? `repeat ${repeat} failed: ${r.error}` : `repeat ${repeat} stopped${r.result?.stopped ? `: ${r.result.stopped}` : ""}`; break; }
       }
-    } catch {} finally { if (loop === me) loop = null; send("state", state()); } // ponytail: a repeat refused at start (validation errors) just ends the loop; the hint shows the first refusal only
+      info.reason ??= "stopped";
+    } catch (e: any) { info.reason = `repeat refused: ${String(e.message).split("\n")[0]}`; } // e.g. validation errors on a later repeat
+    finally {
+      info.running = false;
+      if (loop === me) loop = null;
+      try { appendEvent(dir, { type: "loop.end", source: "studio", pattern, reason: info.reason, spentUsd: info.spentUsd, capUsd: info.capUsd, repeats: info.repeat }); } catch {}
+      tail(); send("state", state());
+    }
   }
+  const publish = () => { rmSync(infoFile, { force: true }); writeFileSync(infoFile, JSON.stringify({ port, token, pid: process.pid, file: host.st!.file }), { mode: 0o600 }); };
 
   // watch the project file (dir watch: atomic renames replace the inode) and tail the event log
   let t1: any, t2: any, offset = existsSync(log) ? statSync(log).size : 0;
@@ -85,7 +110,12 @@ export async function studio(o: { file: string; port?: number }) {
     "GET /api/take/(\\w+)": (_q, res, m) => withTakes((t) => { const g = t.get(m[1]); g ? json(res, 200, { ...g, frames: t.frames(m[1]) }) : json(res, 404, { error: "unknown take" }); }),
     // browser actions: the same tools an MCP client calls, as source "studio". The UI's Play sends pace: "project"; without it a run is unpaced
     "POST /api/patch": async (req, res) => {
-      const a = await body(req), r = await host.call("project_patch", { ops: a.ops }, { source: "studio", summary: a.summary });
+      const a = await body(req);
+      if (a.refuse) { // refuse an edit that would add a validation error containing this text (the mixer's routing refuses cycles)
+        const had = new Set(check(host.cur().p).map((e) => e.message)), bad = check(applyPatch(structuredClone(host.cur().p), a.ops)).find((e) => e.message.includes(a.refuse) && !had.has(e.message));
+        if (bad) throw new Error(bad.message);
+      }
+      const r = await host.call("project_patch", { ops: a.ops }, { source: "studio", summary: a.summary });
       json(res, 200, { ok: true, errors: r.errors });
     },
     "POST /api/run": async (req, res) => {
@@ -94,7 +124,7 @@ export async function studio(o: { file: string; port?: number }) {
       if (a.pattern) {
         const errors = check(host.cur().p);
         if (errors.length) throw new Error(`fix the project first (${errors.length} errors)`);
-        patLoop(a.pattern, a.pace);
+        patLoop(a.pattern, a.pace, { cap: a.capUsd, repeats: a.repeats, cache: a.cache });
         json(res, 202, { ok: true, loop: true });
       } else {
         await host.call("run_start", { arrangement: a.arrangement, cache: a.cache, pace: a.pace, wait: false }, { source: "studio" });
@@ -102,6 +132,28 @@ export async function studio(o: { file: string; port?: number }) {
       }
     },
     "POST /api/stop": async (_q, res) => { if (loop) loop.stop = true; if (host.runs.size) await host.call("run_stop", {}, { source: "studio" }); json(res, 200, { ok: true }); },
+    "GET /api/catalog": (_q, res) => json(res, 200, { plugins: PLUGINS, presets: presets() }),
+    "GET /api/songs": (_q, res) => json(res, 200, { current: basename(file), demos: songs(fileURLToPath(DEMOS)), local: songs(dir) }),
+    // switch the studio's song: a bundled demo is copied into the project folder first (never clobbering), so demos are never edited in place
+    "POST /api/open": async (req, res) => {
+      const a = await body(req), name = String(a.demo ?? a.file ?? "");
+      if (!SONG.test(name)) throw new Error("pick a *.alp.json song");
+      if (playing()) return json(res, 409, { error: "stop playback before opening another song" });
+      let target = resolve(dir, name);
+      if (a.demo != null) {
+        const src = new URL(name, DEMOS), stem = name.replace(/\.alp\.json$/, "");
+        if (!existsSync(src)) throw new Error(`no demo ${name}`);
+        for (let i = 1; ; i++) {
+          target = resolve(dir, i === 1 ? name : `${stem}-${i}.alp.json`);
+          try { copyFileSync(src, target, constants.COPYFILE_EXCL); break; } catch (e: any) { if (e.code !== "EEXIST") throw e; }
+        }
+      } else if (!existsSync(target)) throw new Error(`no song ${name} in ${dir}`);
+      await host.call("project_open", { path: target }, { source: "studio" }); // resets the undo stack
+      file = host.st!.file; loopInfo = null; publish();
+      appendEvent(dir, { type: "song.open", source: "studio", file: basename(file) });
+      tail(); send("state", state());
+      json(res, 200, { ok: true, file: basename(file) });
+    },
     "POST /api/tempo": async (req, res) => {
       const { bpm } = await body(req), p = host.cur().p;
       if (!(typeof bpm === "number" && bpm >= 10 && bpm <= 999)) throw new Error("bpm must be a number from 10 to 999");
@@ -140,7 +192,7 @@ export async function studio(o: { file: string; port?: number }) {
   };
 
   let port = o.port ?? 4870;
-  const token = randomBytes(24).toString("hex"); // fresh per start; only written to studio.json (0600)
+  const token = randomBytes(24).toString("hex"), infoFile = studioFile(dir); // fresh per start; only written to studio.json (0600)
   const server = createServer(async (req, res) => {
     // only this origin: block DNS rebinding (Host) and cross-site POSTs (a page elsewhere could otherwise patch in a script and run it)
     const host = `127.0.0.1:${port}`, origin = req.headers.origin;
@@ -157,10 +209,8 @@ export async function studio(o: { file: string; port?: number }) {
   await new Promise<void>((ok) => server.listen(port, "127.0.0.1", ok));
   port = (server.address() as any).port;
   host.studioUrl = `http://127.0.0.1:${port}/`;
-  const info = studioFile(dir);
-  rmSync(info, { force: true });
-  writeFileSync(info, JSON.stringify({ port, token, pid: process.pid, file: host.st!.file }), { mode: 0o600 });
-  const unpublish = () => { try { if (JSON.parse(readFileSync(info, "utf8")).token === token) rmSync(info); } catch {} };
+  publish();
+  const unpublish = () => { try { if (JSON.parse(readFileSync(infoFile, "utf8")).token === token) rmSync(infoFile); } catch {} };
   process.on("exit", unpublish);
   const ping = setInterval(() => { for (const c of clients) c.write(": ping\n\n"); }, 15000);
   return {

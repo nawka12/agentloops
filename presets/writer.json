@@ -1,0 +1,33 @@
+{
+  "name": "Writer",
+  "description": "Drafts text from the note and its inputs, then revises it from a review on later passes.",
+  "needsKey": true,
+  "color": "#e8a33d",
+  "channel": {
+    "generator": {
+      "plugin": "llm.agent",
+      "params": {
+        "model": "claude-sonnet-5-5",
+        "system": "You are a careful technical writer. Reply with the text only.",
+        "effort": "medium"
+      }
+    },
+    "keymap": [
+      {
+        "key": 60,
+        "name": "Draft",
+        "template": "Write a short draft about: {{note.text}}"
+      },
+      {
+        "key": 62,
+        "name": "Revise",
+        "template": "Revise your draft using this review:\n{{inputs.review}}"
+      }
+    ],
+    "inputs": [],
+    "context": "persistent",
+    "polyphony": 1,
+    "retries": 1,
+    "onFail": "stop"
+  }
+}

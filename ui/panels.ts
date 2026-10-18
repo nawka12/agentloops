@@ -2,6 +2,7 @@
 // left-click draws or places, right-click deletes, drag moves, the right edge resizes, Shift+drag box-selects, the wheel turns knobs. One drag = one patch = one undo step.
 import { wdiff } from "./diff.ts";
 import { BAR, STEP, S, chColor, playing, chName, curPattern, fl, html, noteKey, paint, patLen, patch, pos, posStr, ptr, relTick, toggleWin, waitFor, waiting } from "./main.ts";
+import { EFFORT, SEND_MODES, addBus, addPreset, busMenu, busOf, cat, cloneChannel, deleteChannel, dragData, dropOk, insertProc, makeUnique, menu, moveSlot, newPattern, openChannel, openLoop, openPicker, removeSlot, renameChannel, toggleSend } from "./make.ts";
 
 const loopTxt = (lp: any) => (lp ? `⟳${lp.until ? ` until ${lp.until}` : ""}${lp.max ? ` · max ${lp.max}` : ""}` : "");
 const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
@@ -24,7 +25,10 @@ const preview = (patId: string, ch: string, key: number, rel: number) =>
   S.preview.get(noteKey(patId, ch, key, rel)) ?? (S.latest?.voices ?? []).findLast((v: any) => v.channel === ch && v.key === key && v.status === "done")?.text;
 
 // ---- Playlist: the background window. Clips, loop markers, output previews, playhead ----
-const PL = { label: 112, bar: 132, track: 52 }, PPT_PL = PL.bar / 384; // 384 = BAR (a literal: main.ts is still initializing when this module runs)
+const PL = { label: 112, track: 52 };
+/** horizontal zoom (Ctrl+wheel): pixels per bar in the Playlist, per step in the Piano Roll */
+const Z = { pl: 132, pr: 30 }, ppl = () => Z.pl / 384; // 384 = BAR (a literal: main.ts is still initializing when this module runs)
+const zoom = (k: "pl" | "pr", lo: number, hi: number) => (e: WheelEvent) => { if (!e.ctrlKey) return; e.preventDefault(); Z[k] = clamp(Math.round(Z[k] * (e.deltaY < 0 ? 1.15 : 1 / 1.15)), lo, hi); paint(); };
 export const clipsOf = () => {
   const a = S.project?.arrangements?.[0], pats: any[] = S.project?.patterns ?? [];
   return (a?.clips ?? []).map((c: any, j: number) => { const p = pats.find((x) => x.id === c.ref); return { ...c, j, p, s: pos(c.start ?? 0), l: c.len ?? patLen(p), track: c.track ?? 0 }; });
@@ -33,7 +37,7 @@ let pl: any = null; // clip drag in progress
 function plDown(ev: PointerEvent) {
   const grid = (ev.currentTarget as HTMLElement), r = grid.getBoundingClientRect(), x = ev.clientX - r.left, y = ev.clientY - r.top;
   const el = (ev.target as HTMLElement).closest<HTMLElement>(".clip"), clips = clipsOf(), ai = 0, a = S.project.arrangements?.[0];
-  const tick = Math.max(0, Math.round(x / PPT_PL / 96 - 0.5) * 96), track = Math.floor(y / PL.track);
+  const tick = Math.max(0, Math.round(x / ppl() / 96 - 0.5) * 96), track = Math.floor(y / PL.track);
   if (!el) {
     if (ev.button !== 0) return;
     const pat = curPattern();
@@ -43,13 +47,13 @@ function plDown(ev: PointerEvent) {
       : [{ op: "add", path: "/arrangements", value: [{ id: "main", name: "Main", tracks: [{ name: "Track 1" }], clips: [clip] }] }], `placed ${pat.id} at ${clip.start}, track ${track + 1}`);
   }
   const c = clips[+el.dataset.j!];
-  if (ev.button === 2) return patch([{ op: "remove", path: `/arrangements/${ai}/clips/${c.j}` }], `deleted clip ${c.ref} at ${posStr(c.s)}`);
+  if (ev.button === 2) return (ev.target as HTMLElement).closest(".clip header") ? undefined : patch([{ op: "remove", path: `/arrangements/${ai}/clips/${c.j}` }], `deleted clip ${c.ref} at ${posStr(c.s)}`); // the header's right-click is the clip menu
   if (ev.button !== 0) return;
   ev.preventDefault();
   const edge = ev.clientX > el.getBoundingClientRect().right - 8;
   pl = { j: c.j, mode: edge ? "size" : "move", x0: ev.clientX, y0: ev.clientY, dt: 0, dk: 0 };
   on((e) => {
-    pl.dt = Math.round((e.clientX - pl.x0) / PPT_PL / (edge ? STEP : 96)) * (edge ? STEP : 96);
+    pl.dt = Math.round((e.clientX - pl.x0) / ppl() / (edge ? STEP : 96)) * (edge ? STEP : 96);
     pl.dk = edge ? 0 : Math.round((e.clientY - pl.y0) / PL.track); paint();
   }, () => {
     const d = pl; pl = null; paint();
@@ -72,18 +76,21 @@ export function Playlist() {
   };
   return html`<section id="playlist" class=${`playlist${S.panel === "playlist" ? " front" : ""}`} tabindex="-1" aria-label="Playlist, F5" onPointerDown=${() => { S.panel = "playlist"; }}>
     <header class="pl-head"><b>Playlist</b><span class="sub">${a?.name ?? a?.id ?? "no arrangement yet"} · paint with <i>${curPattern()?.name ?? "—"}</i></span><kbd>F5</kbd></header>
-    <div class="pl-scroll">
+    <div class="pl-scroll" onWheel=${zoom("pl", 40, 640)}>
       <div class="pl-labels">${tracks.map((t) => html`<div class="tlabel" style=${`height:${PL.track}px`}>${t}</div>`)}</div>
-      <div class="pl-main" style=${`width:${nBars * PL.bar}px`}>
-        <div class="ruler" style=${`--bw:${PL.bar}px`}>${Array.from({ length: nBars }, (_, i) => html`<span>${i + 1}</span>`)}</div>
-        <div class=${`pl-grid nocm${fl("arr")}`} style=${`--bw:${PL.bar}px;--th:${PL.track}px;height:${nTracks * PL.track}px`} onPointerDown=${plDown}
-          data-hint="Click an empty spot to place the selected pattern. Drag a clip to move it, its right edge to resize, right-click to delete.">
+      <div class="pl-main" style=${`width:${nBars * Z.pl}px`}>
+        <div class="ruler" style=${`--bw:${Z.pl}px`}>${Array.from({ length: nBars }, (_, i) => html`<span>${i + 1}</span>`)}</div>
+        <div class=${`pl-grid nocm${fl("arr")}`} style=${`--bw:${Z.pl}px;--th:${PL.track}px;--plppt:${ppl()};height:${nTracks * PL.track}px`} onPointerDown=${plDown}
+          data-hint="Click an empty spot to place the selected pattern. Drag a clip to move it, its right edge to resize, right-click to delete, right-click its title for more. Ctrl+scroll zooms.">
           ${clips.map((c: any) => {
             const d = pl?.j === c.j ? pl : null, s = d?.mode === "move" ? Math.max(0, c.s + d.dt) : c.s, l = d?.mode === "size" ? Math.max(STEP, c.l + d.dt) : c.l, t = Math.max(0, c.track + (d?.dk ?? 0));
             const lp = c.loop ?? c.p?.loop, live = r.running && songRun && relTick(r, r.tick).pat === c.ref;
-            return html`<div class=${`clip${live ? " live" : ""}${d ? " drag" : ""}${fl(`pat:${c.ref}`)}`} data-j=${c.j} style=${`left:${s * PPT_PL}px;width:${l * PPT_PL}px;top:${t * PL.track + 2}px;height:${PL.track - 4}px`}
-                data-hint=${`Clip ${c.p?.name ?? c.ref} at ${posStr(c.s)}, ${c.l / STEP} steps${lp ? `, loops ${loopTxt(lp)}` : ""}. Drag to move, right edge to resize, right-click to delete.`}>
-              <header>${c.p?.name ?? c.ref}<span class="loop">${loopTxt(lp)}</span></header>
+            return html`<div class=${`clip${live ? " live" : ""}${d ? " drag" : ""}${fl(`pat:${c.ref}`)}`} data-j=${c.j} style=${`left:${s * ppl()}px;width:${l * ppl()}px;top:${t * PL.track + 2}px;height:${PL.track - 4}px`}
+                data-hint=${`Clip ${c.p?.name ?? c.ref} at ${posStr(c.s)}, ${c.l / STEP} steps${lp ? `, loops ${loopTxt(lp)}` : ""}. Drag to move, right edge to resize, right-click to delete, right-click the title for Make unique and loop settings.`}>
+              <header onContextMenu=${(e: MouseEvent) => menu(e, [
+                { label: "Make unique", hint: "Copy the pattern and point this clip at the copy, so editing it leaves the other clips alone", act: () => makeUnique(c.j) },
+                { label: "Loop settings…", hint: "This clip's own loop: max passes and until", act: () => openLoop(e, "clip", c.j) }, "-",
+                { label: "Delete clip", danger: true, act: () => patch([{ op: "remove", path: `/arrangements/0/clips/${c.j}` }], `deleted clip ${c.ref} at ${posStr(c.s)}`) }])}>${c.p?.name ?? c.ref}<span class="loop">${loopTxt(lp)}</span></header>
               <div class="wave">${lines(c).map((x: any) => html`<span style=${`--c:${chColor(x.ch)}`}>${x.t}</span>`)}</div></div>`;
           })}
           ${songRun ? html`<div class="ph song" aria-hidden="true"><span class="ph-tag"></span></div>` : null}
@@ -93,7 +100,6 @@ export function Playlist() {
 }
 
 // ---- Channel Rack: mute LED, effort knob, name, steps grouped by beat, mixer target ----
-const EFFORT = ["low", "medium", "high", "xhigh", "max"];
 let sp: any = null; // step paint in progress: {ch, val, arr}
 const knob: Record<string, string> = {}, target: Record<string, string> = {};
 export const selChannel = () => {
@@ -124,7 +130,7 @@ function toggleFlag(ci: number, c: any, k: "mute" | "solo", exclusive = false) {
 }
 export function Rack() {
   const pat = curPattern(), chs: any[] = S.project.channels ?? [];
-  if (!pat) return html`<p class="empty-note">No patterns yet. Ask your harness for one (pattern_upsert).</p>`;
+  if (!pat) return html`<p class="empty-note">No patterns yet. <button onClick=${newPattern}>+ New pattern</button></p>`;
   const n = pat.lengthSteps ?? 16, sel = selChannel(), solo = chs.some((c) => c.solo), voices = liveVoices(pat.id);
   const buses = [...(S.project.mixer?.buses ?? []).map((b: any) => b.id), "master"];
   const groups = (cells: any[]) => Array.from({ length: Math.ceil(n / 4) }, (_, g) => html`<span class=${`beat${g % 2 ? " odd" : ""}`}>${cells.slice(g * 4, g * 4 + 4)}</span>`);
@@ -148,22 +154,46 @@ export function Rack() {
           onWheel=${(e: WheelEvent) => { e.preventDefault(); const v = EFFORT[clamp((ei < 0 ? 1 : ei) + (e.deltaY < 0 ? 1 : -1), 0, EFFORT.length - 1)]; knob[c.id] = v; paint();
             later(`k:${c.id}`, () => { delete knob[c.id]; patch([{ op: "add", path: `/channels/${ci}/generator/params${c.generator.params ? "/effort" : ""}`, value: c.generator.params ? v : { effort: v } }], `effort ${v} on ${c.id}`); }); }}
           data-hint=${`Effort: ${eff ?? "default"}. Scroll to change (low … max).`}><i></i></span>` : html`<span class="knob none" aria-hidden="true"></span>`}
-      <button class="name" aria-current=${c.id === sel} onClick=${() => { S.channel = c.id; toggleWin("piano", true); }}
-        data-hint=${`${c.name ?? c.id}: ${c.generator?.plugin} · context ${c.context ?? "fresh"} · listens to ${(c.inputs ?? []).map((i: any) => i.bus).join(", ") || "nothing"}. Click to open it in the piano roll.`}>${c.name ?? c.id}</button>
+      <button class="name" aria-current=${c.id === sel} onClick=${() => { S.channel = c.id; toggleWin("piano", true); }} onDblClick=${() => openChannel(c.id)}
+        onContextMenu=${(e: MouseEvent) => menu(e, [
+          { label: "Open channel window", act: () => openChannel(c.id) }, { label: "Rename…", act: () => renameChannel(c.id) }, { label: "Clone", act: () => cloneChannel(c.id) }, "-",
+          { label: "Mute", on: !!c.mute, act: () => toggleFlag(ci, c, "mute") }, { label: "Solo", on: !!c.solo, hint: "Only soloed channels play", act: () => toggleFlag(ci, c, "solo", true) }, "-",
+          { label: "Delete…", danger: true, act: () => deleteChannel(c.id) }])}
+        data-hint=${`${c.name ?? c.id}: ${c.generator?.plugin} · context ${c.context ?? "fresh"} · listens to ${(c.inputs ?? []).map((i: any) => i.bus).join(", ") || "nothing"}. Click to open it in the piano roll, double-click for its channel window, right-click for more.`}>${c.name ?? c.id}</button>
       <div class="steps nocm">${groups(cells)}</div>
       <span class="target" tabindex="0" role="spinbutton" aria-label=${`${c.name ?? c.id} output bus`} aria-valuetext=${out}
         onWheel=${(e: WheelEvent) => { e.preventDefault(); const v = buses[clamp(bi + (e.deltaY < 0 ? -1 : 1), 0, buses.length - 1)]; target[c.id] = v; paint();
           later(`t:${c.id}`, () => { delete target[c.id]; if (v !== (c.output ?? "master")) patch([{ op: "add", path: `/channels/${ci}/output`, value: v }], `routed ${c.id} to ${v}`); }); }}
         data-hint=${`Output: mixer bus ${out}. Scroll to route it to another bus.`}>${out === "master" ? "M" : bi + 1}</span></div>`;
   });
-  return html`<div class=${`rack${fl(`pat:${pat.id}`)}`}>
+  return html`<div class=${`rack${fl(`pat:${pat.id}`)}`} onDragOver=${dropOk("preset")} onDrop=${(e: DragEvent) => { const id = dragData(e, "preset"), pr = cat.presets.find((x: any) => x.id === id); if (pr) { e.preventDefault(); addPreset(pr); } }}>
     <div class="ch-row leds-row" aria-hidden="true"><span></span><span><span class="ph-tag"></span></span><span class="loop">${loopTxt(pat.loop)}</span><div class="steps leds">${groups(Array.from({ length: n }, () => html`<i></i>`))}</div><span></span></div>
-    ${rows}</div>`;
+    ${rows}
+    <div class="rack-add"><button class="addch" onClick=${(e: MouseEvent) => openPicker("gen", e)} aria-label="Add a channel" data-hint="Add a channel: pick a generator (F8). Or drag an instrument here from the Browser (Alt+F8).">+</button>
+      ${chs.length ? null : html`<span class="muted">Add a channel to start.</span>`}</div></div>`;
 }
 
 // ---- Piano Roll: instruction rows, notes with output previews; draw, move, resize, delete, box-select, properties ----
-const PR = { col: 30, row: 34, label: 118 };
-let pr: any = null, selNotes = new Set<number>(), lastLen = 96, pop: any = null;
+const PR = { row: 34, label: 118 }, VH = 64; // VH: the effort (velocity) lane
+let pr: any = null, selNotes = new Set<number>(), lastLen = 96, pop: any = null, vd: any = null;
+/** the effort lane, FL's velocity lane: drag over the bars to set each note's vel (0..1); one patch per drag */
+function velDown(ev: PointerEvent, pat: any, ch: any, notes: any[]) {
+  if (ev.button !== 0) return;
+  ev.preventDefault();
+  const rc = (ev.currentTarget as HTMLElement).getBoundingClientRect(), real = notes.filter((x) => x.j >= 0), base = notesPath(pat, ch.id);
+  vd = { vals: new Map<number, number>() };
+  const at = (e: PointerEvent) => {
+    const x = e.clientX - rc.left, v = Math.round(clamp(1 - (e.clientY - rc.top) / rc.height, 0, 1) * 100) / 100;
+    for (const n of real) if (x >= (n.s / STEP) * Z.pr - 3 && x < ((n.s + n.len) / STEP) * Z.pr) vd.vals.set(n.j, v);
+    paint();
+  };
+  at(ev);
+  on(at, () => {
+    const d = vd; vd = null; paint();
+    const ops = [...d.vals].filter(([j, v]) => v !== (pat.notes[ch.id][j].vel ?? 0.5)).map(([j, v]) => ({ op: "add", path: `${base}/${j}/vel`, value: v }));
+    patch(ops, `effort of ${ops.length} note${ops.length > 1 ? "s" : ""} of ${ch.id}`);
+  });
+}
 function pianoNotes(pat: any, ch: any) {
   if (!pat || !ch) return [];
   const len = patLen(pat);
@@ -174,7 +204,7 @@ function pianoNotes(pat: any, ch: any) {
 const notesPath = (pat: any, ch: string) => `/patterns/${S.project.patterns.indexOf(pat)}/notes/${ptr(ch)}`;
 function prDown(ev: PointerEvent, pat: any, ch: any, rows: any[], notes: any[]) {
   const grid = ev.currentTarget as HTMLElement, rc = grid.getBoundingClientRect(), x = ev.clientX - rc.left, y = ev.clientY - rc.top;
-  const step = Math.floor(x / PR.col), row = Math.floor(y / PR.row), el = (ev.target as HTMLElement).closest<HTMLElement>(".note"), n = pat.lengthSteps ?? 16;
+  const step = Math.floor(x / Z.pr), row = Math.floor(y / PR.row), el = (ev.target as HTMLElement).closest<HTMLElement>(".note"), n = pat.lengthSteps ?? 16;
   const note = el ? notes[+el.dataset.i!] : null, base = notesPath(pat, ch.id);
   pop = null;
   if (ev.button === 2) {
@@ -189,7 +219,7 @@ function prDown(ev: PointerEvent, pat: any, ch: any, rows: any[], notes: any[]) 
     pr = { mode: "box", x0: x, y0: y, x1: x, y1: y };
     return on((e) => { pr.x1 = e.clientX - rc.left; pr.y1 = e.clientY - rc.top; paint(); }, () => {
       const [l, r, t, b] = [Math.min(pr.x0, pr.x1), Math.max(pr.x0, pr.x1), Math.min(pr.y0, pr.y1), Math.max(pr.y0, pr.y1)];
-      selNotes = new Set(notes.filter((nt) => nt.j >= 0 && nt.s / STEP * PR.col < r && (nt.s + nt.len) / STEP * PR.col > l && rows.findIndex((k) => k.key === nt.key) * PR.row < b && (rows.findIndex((k) => k.key === nt.key) + 1) * PR.row > t).map((nt) => nt.j));
+      selNotes = new Set(notes.filter((nt) => nt.j >= 0 && nt.s / STEP * Z.pr < r && (nt.s + nt.len) / STEP * Z.pr > l && rows.findIndex((k) => k.key === nt.key) * PR.row < b && (rows.findIndex((k) => k.key === nt.key) + 1) * PR.row > t).map((nt) => nt.j));
       pr = null; paint();
     });
   }
@@ -205,7 +235,7 @@ function prDown(ev: PointerEvent, pat: any, ch: any, rows: any[], notes: any[]) 
   const edge = ev.clientX > el!.getBoundingClientRect().right - 7;
   pr = { mode: edge ? "size" : "move", x0: ev.clientX, y0: ev.clientY, ds: 0, dr: 0 };
   paint();
-  on((e) => { pr.ds = Math.round((e.clientX - pr.x0) / PR.col); pr.dr = edge ? 0 : Math.round((e.clientY - pr.y0) / PR.row); paint(); }, () => {
+  on((e) => { pr.ds = Math.round((e.clientX - pr.x0) / Z.pr); pr.dr = edge ? 0 : Math.round((e.clientY - pr.y0) / PR.row); paint(); }, () => {
     const d = pr; pr = null; paint();
     if (!d.ds && !d.dr) return;
     const ops: any[] = [], len = patLen(pat);
@@ -240,16 +270,17 @@ export function Piano() {
   const pat = curPattern(), ch = (S.project.channels ?? []).find((c: any) => c.id === selChannel());
   if (!pat || !ch) return html`<p class="empty-note">Pick a channel in the rack.</p>`;
   const n = pat.lengthSteps ?? 16, rows = [...(ch.keymap ?? [])].sort((a: any, b: any) => b.key - a.key), notes = pianoNotes(pat, ch), color = ch.color ?? "#9aa5ae";
-  const voices = liveVoices(pat.id).filter((v) => v.channel === ch.id), W = n * PR.col;
+  const voices = liveVoices(pat.id).filter((v) => v.channel === ch.id), W = n * Z.pr;
   const pn = pop && pat.notes?.[ch.id]?.[pop.j];
-  return html`<div class=${`pr${fl(`ch:${ch.id}`)}`} style=${`--c:${color};--col:${PR.col}px;--row:${PR.row}px`}>
-    <div class="pr-scroll">
-      <div class="pr-keys">${rows.map((k: any) => html`<div class="pkey" data-hint=${`Instruction ${k.name}: ${k.template ?? "{{note.text}}"}`}><b>${k.name ?? `key ${k.key}`}</b><small>${k.key}</small></div>`)}</div>
+  return html`<div class=${`pr${fl(`ch:${ch.id}`)}`} style=${`--c:${color};--col:${Z.pr}px;--row:${PR.row}px`}>
+    <div class="pr-scroll" onWheel=${zoom("pr", 12, 96)}>
+      <div class="pr-keys">${rows.map((k: any) => html`<div class="pkey" data-hint=${`Instruction ${k.name}: ${k.template ?? "{{note.text}}"}`}><b>${k.name ?? `key ${k.key}`}</b><small>${k.key}</small></div>`)}
+        <div class="vlabel" style=${`height:${VH}px`} data-hint="Effort lane: each bar is a note's velocity, its effort from 0 to 1">Effort</div></div>
       <div class="pr-main" style=${`width:${W}px`}>
-        <div class="ruler" style=${`--bw:${PR.col * 4}px`}>${Array.from({ length: Math.ceil(n / 4) }, (_, i) => html`<span>${posStr(i * 4 * STEP)}</span>`)}</div>
-        <div class="pr-grid nocm" style=${`height:${rows.length * PR.row}px`} onPointerDown=${(e: PointerEvent) => prDown(e, pat, ch, rows, notes)}
-          onDblClick=${(e: MouseEvent) => { const el = (e.target as HTMLElement).closest<HTMLElement>(".note"), nt = el && notes[+el.dataset.i!]; if (nt && nt.j >= 0) { pop = { j: nt.j, x: nt.s / STEP * PR.col, y: (rows.findIndex((k: any) => k.key === nt.key) + 1) * PR.row }; paint(); } }}
-          data-hint="Click to draw a note, drag a note to move it, its right edge to resize. Right-click deletes, Shift+drag selects, double-click edits the note.">
+        <div class="ruler" style=${`--bw:${Z.pr * 4}px`}>${Array.from({ length: Math.ceil(n / 4) }, (_, i) => html`<span>${posStr(i * 4 * STEP)}</span>`)}</div>
+        <div class="pr-grid nocm" style=${`height:${rows.length * PR.row}px;--prppt:${Z.pr / STEP}`} onPointerDown=${(e: PointerEvent) => prDown(e, pat, ch, rows, notes)}
+          onDblClick=${(e: MouseEvent) => { const el = (e.target as HTMLElement).closest<HTMLElement>(".note"), nt = el && notes[+el.dataset.i!]; if (nt && nt.j >= 0) { pop = { j: nt.j, x: nt.s / STEP * Z.pr, y: (rows.findIndex((k: any) => k.key === nt.key) + 1) * PR.row }; paint(); } }}
+          data-hint="Click to draw a note, drag a note to move it, its right edge to resize. Right-click deletes, Shift+drag selects, double-click edits the note. Ctrl+scroll zooms.">
           ${notes.map((x: any, i: number) => {
             const r = rows.findIndex((k: any) => k.key === x.key);
             if (r < 0) return null;
@@ -258,7 +289,7 @@ export function Piano() {
             const wt = S.run.running && vs.some((v) => v.status === "waiting"), failed = lv?.status === "failed", out = preview(pat.id, ch.id, x.key, x.s);
             const badges = [wt && "⏳ harness", x.n.when && `if ${x.n.when}`, x.n.pass && `pass ${x.n.pass}`, x.n.slide && "slide ↝", x.j < 0 && "step"].filter(Boolean);
             return html`<div class=${`note${x.j < 0 ? " stepnote" : ""}${live ? " lit" : ""}${failed ? " failed" : ""}${x.j >= 0 && selNotes.has(x.j) ? " sel" : ""}`} data-i=${i}
-                style=${`left:${(x.s / STEP + ds) * PR.col + 1}px;top:${clamp(r + dr, 0, rows.length - 1) * PR.row + 2}px;width:${Math.max(8, (x.len / STEP + dl) * PR.col - 2)}px`}
+                style=${`left:${(x.s / STEP + ds) * Z.pr + 1}px;top:${clamp(r + dr, 0, rows.length - 1) * PR.row + 2}px;width:${Math.max(8, (x.len / STEP + dl) * Z.pr - 2)}px`}
                 data-hint=${`${x.instr?.name ?? `key ${x.key}`} at ${posStr(x.s)}, ${x.len / STEP} steps${x.n.when ? ` · when ${x.n.when}` : ""}${x.n.pass ? ` · pass ${x.n.pass}` : ""}${x.n.slide ? " · slide: continues the previous voice's conversation" : ""}${out ? ` · last output: ${String(out).slice(0, 120)}` : ""}${x.j < 0 ? " · a step from the rack" : ". Drag to move, right edge to resize, double-click to edit, right-click to delete."}`}>
               <span class="l1"><b>${x.instr?.name ?? `key ${x.key}`}</b>${badges.map((b) => html`<span class="badge">${b}</span>`)}</span>
               <span class="out">${failed ? lv.error ?? "failed" : out ?? ""}</span><span class="tag">⏳ ${ch.name ?? ch.id}…</span>
@@ -267,6 +298,9 @@ export function Piano() {
           ${pr?.mode === "box" ? html`<div class="box" style=${`left:${Math.min(pr.x0, pr.x1)}px;top:${Math.min(pr.y0, pr.y1)}px;width:${Math.abs(pr.x1 - pr.x0)}px;height:${Math.abs(pr.y1 - pr.y0)}px`}></div>` : null}
           <div class="ph pat" aria-hidden="true"><span class="ph-tag"></span></div>
         </div>
+        <div class="vel nocm" style=${`height:${VH}px`} onPointerDown=${(e: PointerEvent) => velDown(e, pat, ch, notes)} data-hint="Effort lane: drag up or down across the bars to set each note's velocity (its effort, 0 to 1)">
+          ${notes.filter((x: any) => x.j >= 0).map((x: any) => { const v = vd?.vals.get(x.j) ?? x.n.vel ?? 0.5;
+            return html`<i style=${`left:${(x.s / STEP) * Z.pr + 2}px;height:${v * 100}%`} data-hint=${`${x.instr?.name ?? "note"} at ${posStr(x.s)}: effort ${v}`}></i>`; })}</div>
       </div>
     </div>
     ${pn ? html`<form class="pop" style=${`left:${PR.label + pop.x}px;top:${pop.y + 22}px`} onSubmit=${(e: Event) => { e.preventDefault(); savePop(pat, ch, e.target as HTMLFormElement); }}
@@ -280,24 +314,50 @@ export function Piano() {
   </div>`;
 }
 
-// ---- Mixer: strips (Master last), live meters, slots, sends; click a strip to monitor it ----
+// ---- Mixer: strips (Master last), decaying meters, slots, FL-style routing: select a strip, then ▲ on another sends to it ----
+const busName = (id: string) => (id === "master" ? "Master" : busOf(id)?.name ?? id);
+const MODE: Record<string, string> = { final: "F", all: "A", sidechain: "SC" };
+function slotDrop(e: DragEvent, bus: string, j: number) {
+  const proc = dragData(e, "proc"), sl = dragData(e, "slot");
+  if (proc) { e.preventDefault(); insertProc(bus, j, proc); }
+  else if (sl && sl.bus === bus && sl.j !== j) { e.preventDefault(); moveSlot(bus, sl.j, j); }
+}
+const slotOver = (e: DragEvent) => { dropOk("proc")(e); dropOk("slot")(e); };
 export function Mixer() {
   const buses = [...(S.project.mixer?.buses ?? []), { id: "master", name: "Master", ...(S.project.mixer?.master ?? {}) }];
-  const m = S.run.buses, max = Math.max(4, ...Object.values<any>(m).map((b) => b.frames));
-  const MODE: Record<string, string> = { final: "F", all: "A", sidechain: "SC" };
-  return html`<div class="strips">${buses.map((b: any, i: number) => {
+  const m = S.run.buses, selId = S.monitorBus, selB = buses.find((b: any) => b.id === selId), routing = selB && selB.id !== "master";
+  const selSends: any[] = routing ? selB.sends ?? [{ to: "master", mode: "all" }] : [];
+  return html`<div class="mx">
+    <div class="mx-bar">
+      <button onClick=${addBus} data-hint="Add a mixer bus. Right-click its name to rename it.">+ Bus</button>
+      <span class="lbl">send mode</span><button class="mode" onClick=${() => { S.sendMode = SEND_MODES[(SEND_MODES.indexOf(S.sendMode) + 1) % SEND_MODES.length]; paint(); }}
+        data-hint="The mode of new sends: final (only voices' answers), all (every frame), sidechain (control only: a gate there reads it as side.last). Click to cycle.">${S.sendMode}</button>
+      <span class="muted">${routing ? `Routing ${busName(selId)}: click ▲ under a strip to send to it (${S.sendMode}), again to remove` : "Select a strip to route it"}</span></div>
+    <div class="strips">${buses.map((b: any, i: number) => {
     const mt = m[b.id] ?? { frames: 0, cost: 0, errors: 0 }, sends = b.id === "master" ? [] : b.sends ?? [{ to: "master", mode: "all" }];
-    const slots = [...(b.slots ?? []), ...Array(Math.max(0, 4 - (b.slots?.length ?? 0))).fill(null)], lv = Math.round((mt.frames / max) * 100);
-    return html`<button class=${`strip${b.id === "master" ? " master" : ""}${S.monitorBus === b.id ? " monitored" : ""}${fl(`bus:${b.id}`)}`} aria-pressed=${S.monitorBus === b.id}
-        onClick=${() => { S.monitorBus = b.id; S.monTab = b.id === "master" ? "master" : "bus"; toggleWin("monitor", true); }} data-hint=${`Bus ${b.name ?? b.id}${b.join ? ` · join ${b.join}` : ""}. Click to hear it: the Monitor shows what this bus emits.`}>
-      <h3><i>${b.id === "master" ? "M" : i + 1}</i>${b.name ?? b.id}</h3>
-      <div class="meter" role="meter" aria-label=${`${b.id} frames this run`} aria-valuenow=${mt.frames} aria-valuemin="0" aria-valuemax=${max}>
-        <i style=${`height:${lv}%`}></i><i style=${`height:${Math.round(lv * 0.86)}%`}></i>${mt.at ? html`<b class="hit pk" data-t=${mt.at}></b>` : null}</div>
+    const n = Math.min(10, Math.max(4, (b.slots?.length ?? 0) + 1)), slots = Array.from({ length: n }, (_, j) => b.slots?.[j] ?? null);
+    const isSel = selId === b.id, inc = selSends.find((s) => s.to === b.id), select = () => { S.monitorBus = b.id; S.monTab = b.id === "master" ? "master" : "bus"; toggleWin("monitor", true); };
+    return html`<div class=${`strip${b.id === "master" ? " master" : ""}${isSel ? " monitored" : ""}${inc ? " recv" : ""}${fl(`bus:${b.id}`)}`} role="group" tabindex="0" aria-label=${`Bus ${busName(b.id)}`} data-bus=${b.id}
+        onClick=${select} onKeyDown=${(e: KeyboardEvent) => { if (e.key === "Enter" && e.target === e.currentTarget) select(); }}
+        data-hint=${`Bus ${b.name ?? b.id}${b.join ? ` · join ${b.join}` : ""}. Click to select and monitor it (then route it with ▲ on other strips). Right-click the name to rename, delete or set the join.`}>
+      <h3 onContextMenu=${(e: MouseEvent) => busMenu(e, b)}><i>${b.id === "master" ? "M" : i + 1}</i><span class="bn">${b.name ?? b.id}</span>${inc ? html`<span class="rx" data-hint=${`Receives a ${inc.mode} send from ${busName(selId)}`}>◀ ${MODE[inc.mode] ?? inc.mode}</span>` : null}</h3>
+      <div class="meter" data-bus=${b.id} role="meter" aria-label=${`${b.id} level`} aria-valuenow=${mt.frames} aria-valuemin="0">
+        <i></i><i></i><b class="pkl"></b>${mt.at ? html`<b class="hit pk" data-t=${mt.at}></b>` : null}</div>
       <div class="stat"><span>${mt.frames} fr</span><span>$${mt.cost.toFixed(3)}</span><span class=${mt.errors ? "err" : ""}>⚠${mt.errors}</span></div>
-      ${slots.map((s: any, j: number) => s ? html`<div class="slot" data-hint=${`Slot ${j + 1}: ${s.plugin} ${JSON.stringify(s.params ?? {}).slice(0, 140)}`}>${j + 1} ${s.plugin.replace("fx.", "")}${s.plugin === "fx.gate" && s.params?.condition?.startsWith("side") ? " ◀SC" : ""}</div>` : html`<div class="slot empty">${j + 1} —</div>`)}
-      ${sends.map((s: any) => html`<div class="send" data-hint=${`Send to ${s.to}, mode ${s.mode}`}>→ ${s.to} ${MODE[s.mode] ?? s.mode}</div>`)}
-      ${b.id === "master" ? (b.targets ?? []).map((t: any) => html`<div class="send muted">⇥ ${t.type}</div>`) : null}</button>`;
-  })}</div>`;
+      ${slots.map((s: any, j: number) => s
+        ? html`<div class="slot" draggable="true" onDragStart=${(e: DragEvent) => { e.dataTransfer!.setData("application/x-alp-slot", JSON.stringify({ bus: b.id, j })); e.dataTransfer!.effectAllowed = "move"; }}
+            onDragOver=${slotOver} onDrop=${(e: DragEvent) => slotDrop(e, b.id, j)} onClick=${(e: Event) => e.stopPropagation()}
+            onDblClick=${(e: MouseEvent) => { e.stopPropagation(); S.slotEd = { bus: b.id, j, x: e.clientX - 30, y: e.clientY + 14 }; paint(); }}
+            onContextMenu=${(e: MouseEvent) => { e.preventDefault(); e.stopPropagation(); removeSlot(b.id, j); }}
+            data-hint=${`Slot ${j + 1}: ${s.plugin} ${JSON.stringify(s.params ?? {}).slice(0, 120)}. Double-click to edit, drag to reorder, right-click to remove.`}>${j + 1} ${s.plugin.replace("fx.", "")}${s.plugin === "fx.gate" && s.params?.condition?.startsWith("side") ? " ◀SC" : ""}</div>`
+        : html`<div class="slot empty" role="button" tabindex="0" onClick=${(e: MouseEvent) => { e.stopPropagation(); openPicker("proc", e, { bus: b.id, slot: j }); }} onDragOver=${slotOver} onDrop=${(e: DragEvent) => slotDrop(e, b.id, j)}
+            data-hint="Empty slot: click to insert a processor, or drop one from the Browser">${j + 1} —</div>`)}
+      <div class="sends">${sends.map((s: any) => html`<div class=${`send${isSel ? " hot" : ""}`} data-hint=${`Send to ${busName(s.to)}, mode ${s.mode}`}>→ ${busName(s.to)} ${MODE[s.mode] ?? s.mode}</div>`)}
+        ${b.id !== "master" && !sends.length ? html`<div class="send muted">no sends</div>` : null}
+        ${b.id === "master" ? (b.targets ?? []).map((t: any) => html`<div class="send muted">⇥ ${t.type}</div>`) : null}</div>
+      ${routing && !isSel ? html`<button class=${`sendtog${inc ? " on" : ""}`} aria-pressed=${!!inc} onClick=${(e: Event) => { e.stopPropagation(); toggleSend(selId, b.id); }}
+          data-hint=${inc ? `${busName(selId)} sends ${inc.mode} here. Click to remove the send.` : `Send ${busName(selId)} to ${busName(b.id)} (${S.sendMode})`}>${inc ? `▲ ${MODE[inc.mode] ?? inc.mode}` : "▲"}</button>` : html`<span class="sendtog none"></span>`}</div>`;
+  })}</div></div>`;
 }
 
 // ---- Tracer: voice Gantt by wall time + frame list ----

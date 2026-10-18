@@ -1,0 +1,26 @@
+{
+  "name": "You (harness)",
+  "description": "Your harness (Claude Code over Studio MCP) plays this channel under its own login: the run waits for voice_reply.",
+  "needsKey": false,
+  "color": "#4fd1c1",
+  "channel": {
+    "generator": {
+      "plugin": "harness",
+      "params": {
+        "instructions": "You are a careful technical writer. Reply with the text only."
+      }
+    },
+    "keymap": [
+      {
+        "key": 60,
+        "name": "Do",
+        "template": "{{note.text}}"
+      }
+    ],
+    "inputs": [],
+    "context": "persistent",
+    "polyphony": 1,
+    "retries": 1,
+    "onFail": "stop"
+  }
+}

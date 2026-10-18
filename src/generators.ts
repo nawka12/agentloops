@@ -13,10 +13,13 @@ export type Raw = { text?: string; json?: unknown; meta?: Record<string, unknown
 
 // ponytail: not sandboxed; worker + permissions per SPEC §12 later
 async function script(ctx: any): Promise<Raw[]> {
+  ctx.checkBudget?.();
   const fn = new AsyncFunction("ctx", ctx.params.code);
   const r = await fn({ prompt: ctx.prompt, inputs: ctx.inputs, note: ctx.note, loop: ctx.loop, trigger: ctx.trigger, params: ctx.params, history: ctx.history });
   const items = Array.isArray(r) ? r : [r];
   if (!items.length) throw new Error("script returned an empty array");
+  const usd = items.reduce((a: number, x: any) => a + (Number(x?.meta?.costUsd) || 0), 0); // a script's reported cost counts against budgets (tests and spend caps without an API key)
+  if (usd) ctx.charge?.(usd, 0);
   return items.map((x: any) => {
     if (typeof x === "string") return { text: x };
     if (x && (x.text !== undefined || x.json !== undefined)) return { text: x.text, json: x.json, meta: x.meta }; // meta lets a script simulate tokens/cost

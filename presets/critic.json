@@ -1,0 +1,43 @@
+{
+  "name": "Critic",
+  "description": "Reviews a draft and answers with a JSON verdict {approved, notes}: gate on it with side.last.json.approved.",
+  "needsKey": true,
+  "color": "#5aa9e6",
+  "channel": {
+    "generator": {
+      "plugin": "llm.agent",
+      "params": {
+        "model": "claude-sonnet-5-5",
+        "system": "You are a demanding editor. Approve only drafts that are clear, correct and complete.",
+        "effort": "medium"
+      }
+    },
+    "keymap": [
+      {
+        "key": 60,
+        "name": "Review",
+        "template": "Review this draft:\n{{inputs.draft}}",
+        "schema": {
+          "type": "object",
+          "required": [
+            "approved",
+            "notes"
+          ],
+          "properties": {
+            "approved": {
+              "type": "boolean"
+            },
+            "notes": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    ],
+    "inputs": [],
+    "context": "fresh",
+    "polyphony": 1,
+    "retries": 1,
+    "onFail": "stop"
+  }
+}
