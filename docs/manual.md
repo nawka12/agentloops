@@ -157,6 +157,64 @@ P1 with a harness Writer (the Critic stays `script`): replace the writer's `gene
 { "plugin": "harness", "params": { "instructions": "You are a careful technical writer. Reply with the draft text only." } }
 ```
 
+## Making music (the studio plays every voice)
+
+The studio sonifies the song, so it can be actual music. A note is a sound, and an agent is an instrument.
+- **Pitch:** a note's `key` is its **MIDI pitch**. In FL naming, 60 is C5 and 69 is A5 (440 Hz). Every key a channel plays must be a row in its keymap, so name the rows after the pitches ("A4", "C5") and use template `{{note.text}}`.
+- **Length:** a note rings for its `len` at `clock.bpm`, or longer while its agent is still running. 24 ticks is a 16th step, 96 a beat, and 384 a bar.
+- **Chords:** stack notes at the same `start`. Raise the channel's `polyphony` (default 4) to at least the chord size.
+- **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
+  - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato).
+  - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
+  - **`drums`, a GM kit:**
+    - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
+    - 38/40 snare
+    - 39 clap
+    - 42/44 closed hat
+    - 46 open hat
+    - 49/57 crash
+    - anything else plays a rim click
+- **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
+- **Structure:**
+  - Write one pattern per section (intro, verse, build, drop, break, outro), each typically `lengthSteps: 64` (4 bars), and place them as clips in the arrangement.
+  - To layer, put clips on different `track`s at the same bar.
+  - SONG plays the arrangement once; PAT loops the selected pattern.
+- **Listening:** the user hears the run, so **always `run_start` with `pace: "project"`**. Unpaced, every note fires at once.
+- **Words:** give vocal-chop notes syllables in `text`. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
+- **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated. It takes about 1.6× the song's length.
+- **Craft that works:**
+  - Royal-road chords IV–V–iii–vi (in C: Fmaj9 → G6/9 → Em9 → Am9) in rootless 7th/9th voicings around C5, with the bass on the roots an octave or two below.
+  - A pentatonic hook in C6–C7 that answers itself every bar.
+  - Future-bass chord stabs in a 3-3-2 rhythm (steps 1, 4, 7, then a held 9).
+  - Half-time drums (kick on 1 and on the "and" of 3, snare and clap on beat 3, hats on 8ths).
+  - Builds: a snare roll from quarters to 8ths to 16ths to 32nds, a riser, then a beat of silence before the drop.
+  - Kawaii bass sits at 150–170 BPM.
+- **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
+
+```json
+{
+  "format": "agentloops/1", "name": "One bar of kawaii bass", "clock": { "bpm": 160 },
+  "channels": [
+    { "id": "drums", "name": "Drums", "sound": "drums", "output": "band", "generator": { "plugin": "script", "params": { "code": "return ctx.note.text;" } },
+      "keymap": [{ "key": 36, "name": "Kick", "template": "{{note.text}}" }, { "key": 38, "name": "Snare", "template": "{{note.text}}" }, { "key": 42, "name": "Hat", "template": "{{note.text}}" }] },
+    { "id": "chords", "name": "Supersaw", "sound": "supersaw", "gain": 0.85, "polyphony": 8, "output": "band", "generator": { "plugin": "script", "params": { "code": "return ctx.note.text;" } },
+      "keymap": [{ "key": 57, "name": "A4", "template": "{{note.text}}" }, { "key": 60, "name": "C5", "template": "{{note.text}}" }, { "key": 64, "name": "E5", "template": "{{note.text}}" }, { "key": 67, "name": "G5", "template": "{{note.text}}" }] },
+    { "id": "bass", "name": "Sub", "sound": "sub", "output": "band", "generator": { "plugin": "script", "params": { "code": "return ctx.note.text;" } },
+      "keymap": [{ "key": 41, "name": "F3", "template": "{{note.text}}" }] }
+  ],
+  "patterns": [{ "id": "drop", "name": "Drop", "lengthSteps": 16, "notes": {
+    "drums": [{ "start": "1:01", "key": 36, "text": "kick" }, { "start": "1:11", "key": 36, "text": "kick" }, { "start": "1:09", "key": 38, "text": "snare" },
+      { "start": "1:01", "key": 42, "text": "hat" }, { "start": "1:03", "key": 42, "text": "hat" }, { "start": "1:05", "key": 42, "text": "hat" }, { "start": "1:07", "key": 42, "text": "hat" },
+      { "start": "1:09", "key": 42, "text": "hat" }, { "start": "1:11", "key": 42, "text": "hat" }, { "start": "1:13", "key": 42, "text": "hat" }, { "start": "1:15", "key": 42, "text": "hat" }],
+    "chords": [{ "start": "1:01", "len": 72, "key": 57, "text": "Fmaj9" }, { "start": "1:01", "len": 72, "key": 60, "text": "Fmaj9" }, { "start": "1:01", "len": 72, "key": 64, "text": "Fmaj9" }, { "start": "1:01", "len": 72, "key": 67, "text": "Fmaj9" },
+      { "start": "1:04", "len": 72, "key": 57, "text": "Fmaj9" }, { "start": "1:04", "len": 72, "key": 60, "text": "Fmaj9" }, { "start": "1:04", "len": 72, "key": 64, "text": "Fmaj9" }, { "start": "1:04", "len": 72, "key": 67, "text": "Fmaj9" },
+      { "start": "1:07", "len": 144, "key": 57, "text": "Fmaj9" }, { "start": "1:07", "len": 144, "key": 60, "text": "Fmaj9" }, { "start": "1:07", "len": 144, "key": 64, "text": "Fmaj9" }, { "start": "1:07", "len": 144, "key": 67, "text": "Fmaj9" }],
+    "bass": [{ "start": "1:01", "len": 72, "key": 41, "text": "F" }, { "start": "1:04", "len": 72, "key": 41, "text": "F" }, { "start": "1:07", "len": 144, "key": 41, "text": "F" }] } }],
+  "arrangements": [{ "id": "main", "clips": [{ "ref": "drop", "start": "1:01" }] }],
+  "mixer": { "buses": [{ "id": "band", "name": "Band", "sends": [] }] }
+}
+```
+
 ## The authoring loop
 
 1. **Build.** `project_create` (use `starter: false` for a blank project, otherwise it contains a tiny `hello` channel/pattern/arrangement to replace), then `channel_upsert`, `bus_upsert`, `pattern_upsert`, `arrangement_upsert` from the user's description. Use `plugin_search` to see what exists. Order does not matter; errors are expected until it is complete.
