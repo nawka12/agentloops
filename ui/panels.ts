@@ -54,7 +54,7 @@ export function rack() {
   }).join("");
   set($("rack"), `<h2>Channel rack <span class="muted">${esc(pat.name ?? pat.id)} · ${n} steps${pat.loop ? ` · ${esc(loopTxt(pat.loop))}` : ""}</span><kbd>F6</kbd></h2><div class="body${fl(`pat:${pat.id}`)}">${rows}</div>`);
 }
-const selChannel = () => {
+export const selChannel = () => {
   const pat = curPattern(), chs: any[] = S.project.channels ?? [];
   if (chs.some((c) => c.id === S.channel)) return S.channel;
   return chs.find((c) => pat?.notes?.[c.id] || pat?.steps?.[c.id])?.id ?? chs[0]?.id;
@@ -192,7 +192,7 @@ export function tracer() {
   const bar = wt.length ? `<div class="waitbar" role="status">${esc(waitFor(wt[0]))}: ${wt.map((v: any) => `<b>${esc(chName(v.channel))}</b> ${esc((S.project.channels ?? []).find((c: any) => c.id === v.channel)?.keymap?.find((k: any) => k.key === v.key)?.name ?? "")} <span class="muted">(pass ${v.pass + 1}, voice ${v.voice})</span>`).join(" · ")}</div>` : "";
   if (!tk) return set($("tracer"), `<h2>Tracer<kbd>F10</kbd></h2>${bar}<p class="empty-note">No takes yet. Run the song (Space) or let your harness call run_start.</p>`);
   const vs: any[] = tk.voices.filter((v: any) => v.startMs != null), end = Math.max(1, ...vs.map((v) => v.endMs ?? v.startMs));
-  const gantt = vs.map((v) => `<button class="vrow" data-act="voice" data-v="${v.voice}" data-k="v:${v.voice}" aria-pressed="${S.voice === v.voice}" data-hint="${esc(chName(v.channel))} · pass ${v.pass + 1} · ${esc(v.status)} · ${(v.endMs ?? v.startMs) - v.startMs} ms · $${v.costUsd.toFixed(4)}${v.cached ? " · cached" : ""}. Click to filter frames">
+  const gantt = vs.map((v) => `<button class="vrow${fl(`voice:${v.voice}`)}" data-act="voice" data-v="${v.voice}" data-k="v:${v.voice}" aria-pressed="${S.voice === v.voice}" data-hint="${esc(chName(v.channel))} · pass ${v.pass + 1} · ${esc(v.status)} · ${(v.endMs ?? v.startMs) - v.startMs} ms · $${v.costUsd.toFixed(4)}${v.cached ? " · cached" : ""}. Click to filter frames">
     <span>${esc(chName(v.channel))} · pass ${v.pass + 1}</span><span class="vtrack"><i class="${esc(v.status)}" style="background:${esc(chColor(v.channel))};left:${(v.startMs / end) * 100}%;width:${(((v.endMs ?? v.startMs) - v.startMs) / end) * 100}%"></i></span></button>`).join("");
   const frames = (tk.frames ?? []).filter((f: any) => S.voice == null || f.voice === S.voice);
   const list = frames.map((f: any) => `<div class="frame"><header><span class="k ${esc(f.kind)}">${esc(f.kind)}</span><span class="trust ${esc(f.trust)}">${esc(f.trust ?? "trusted")}</span><span>${esc(chName(f.channel))} → ${esc(f.bus)} · pass ${f.pass + 1}${f.final ? " · final" : ""}</span></header>

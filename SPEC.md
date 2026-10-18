@@ -625,6 +625,7 @@ AgentLoops also *provides* MCP servers, on top of consuming them as tools. There
 | Project | `project_create`, `project_open`, `project_get` (full JSON or a summary), `project_validate` |
 | Edit | `project_patch` (RFC 6902 JSON Patch, validated and applied atomically, which covers any field), `channel_upsert`, `instruction_upsert`, `pattern_edit` (steps and notes), `clip_place`, `bus_upsert`, `processor_insert`, `route_set`, `automation_set`, `undo` |
 | Run | `run_start` (arrangement or pattern, cache policy, budget, input), `voice_reply` (answers `harness` voices), `run_status`, `run_stop` |
+| Studio | `studio_status` (is a studio hosting this project?), `studio_focus` (point the user at a panel, channel, pattern, bus or voice), `studio_view` (what the user is looking at) |
 | Inspect | `score_view` (§10.4), `take_list`, `take_get` (a summary, or frames filtered by bus, channel or kind), `take_compare`, `meter_get`, `bounce` |
 | Library | `plugin_search`, `preset_search` |
 | Inbox | `inbox_list`, `inbox_reply` (answers `human` voices only, §12) |
@@ -826,6 +827,16 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 **Engine ↔ UI protocol:** JSON over WebSocket. Commands go in (`edit`, `play`, `stop`, `seek`, `bounce`…), and events come out (`voice.*`, `frame`, `meter`, `barrier`, `take.*`). The UI never computes run state on its own. Studio MCP (§10.1) is a second adapter over the same commands and events, so anything the UI can do, an agent can do.
 
 > **Slice 3 deviations.** The studio uses Server-Sent Events (`GET /api/events`) for server → browser and `fetch` POSTs for browser → server instead of a WebSocket. The UI is plain DOM plus Canvas 2D in type-stripped TypeScript (`ui/*.ts`, no framework, no build step) instead of React. `agentloops mcp` and `agentloops studio` are separate processes that sync through the project file (reload before edit) and the shared log `.agentloops/events.jsonl`.
+
+**Studio as host (slice 5, after Blender MCP).** One live instance owns the state, and the MCP server only forwards:
+
+```
+Claude Code ⇐ MCP/stdio ⇒ agentloops mcp (relay) ⇐ HTTP + bearer token ⇒ agentloops studio (host: project, undo, runs)
+```
+
+- **The studio is the host.** When it opens a project, it writes `.agentloops/studio.json` (`port`, `token`, `pid`, `file`, mode 0600), and it removes the file on exit. It is the host for everything: the project, one undo history shared by every source with attribution, runs, and harness waits.
+- **`agentloops mcp` is a relay.** On every tool call it checks for a live studio for that project file. If there is one, it relays the call to `POST /api/tool`, which streams NDJSON progress and the result, and cancels by aborting the request. If not, it runs the call on its own in-process host, the headless fallback that matches Blender's `*_for_cli` tools.
+- **What this enables:** Play pressed in the studio works with `harness` channels, Undo is shared, and the agent can steer your view. The new tools are `studio_status`, `studio_focus` (show the user a panel or entity) and `studio_view` (what the user has open).
 
 ---
 

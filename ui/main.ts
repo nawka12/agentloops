@@ -1,6 +1,6 @@
 // AgentLoops Studio, browser side. Served type-stripped by src/studio.ts.
 // ponytail: plain DOM re-render; adopt Preact when panels gain rich interactive state
-import { drawPiano, mixer, piano, playlist, rack, tracer } from "./panels.ts";
+import { drawPiano, mixer, piano, playlist, rack, selChannel, tracer } from "./panels.ts";
 
 export const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export const ptr = (s: string) => s.replace(/~/g, "~0").replace(/\//g, "~1");
@@ -21,7 +21,7 @@ export async function patch(ops: any[], summary: string) {
 }
 async function post(path: string, body: any = {}) {
   const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
-  if (!r.ok) setHint(`${path.slice(5)} refused: ${(await r.json()).error}`);
+  if (!r.ok) setHint(`${path.slice(5)} refused: ${String((await r.json()).error).split("\n")[0]}`);
 }
 const play = () => S.run.running ? post("/api/stop")
   : post("/api/run", { ...(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id }), cache: S.cache ? "prefer" : "fresh" });
@@ -94,7 +94,10 @@ const ago = (at: number) => { const s = Math.round((Date.now() - at) / 1000); re
 const NAMES: Record<string, string> = { "claude-code": "Claude Code", "claude-ai": "Claude" };
 /** Voices of the running run that wait for the outside harness to answer (a harness channel's note), and who is expected to. */
 export const waiting = (): any[] => (S.run.running ? [...S.run.voices.values()].filter((v: any) => v.status === "waiting") : []);
-export const waitFor = (v: any) => { const c = String(v?.source ?? "").slice(4); return `⏳ waiting for ${NAMES[c] ?? (c || "the harness")}`; };
+export const waitFor = (v: any) => {
+  const c = String(v?.source ?? "");
+  return c.startsWith("mcp:") ? `⏳ waiting for ${NAMES[c.slice(4)] ?? c.slice(4)}` : "⏳ waiting for your harness: ask it to answer (voice_reply)"; // a run started in the studio has no known client
+};
 export const who = (src: string) => src?.startsWith("mcp:") ? `via MCP · ${NAMES[src.slice(4)] ?? src.slice(4)}` : src === "cli" ? "CLI" : src ?? "";
 
 function toolbarCtl() {
@@ -106,6 +109,7 @@ function toolbarCtl() {
     </span>
     <label data-hint="Pattern shown in the rack and piano roll, and played in PAT mode"><span class="sr">Pattern</span>
       <select data-act="pattern" data-k="patsel">${pats.map((p: any) => `<option value="${esc(p.id)}"${p.id === curPattern()?.id ? " selected" : ""}>${esc(p.name ?? p.id)}</option>`).join("")}</select></label>
+    <button data-act="undo" data-k="undo" ${S.project ? "" : "disabled"} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶ Undo</button>
     <label data-hint="Replay unchanged voices from earlier takes instead of running them again"><input type="checkbox" data-act="cache" data-k="cache"${S.cache ? " checked" : ""}> Cache</label>
     <span class="muted" data-hint="Project file">${esc(S.project?.name)} <small>${esc(S.file)}</small></span>`);
 }
@@ -129,7 +133,7 @@ function feed() {
   const items = S.events.filter((e: any) => e.type === "edit" || e.type.startsWith("run.") || (e.type === "voice" && (e.status === "failed" || e.phase === "wait"))).slice(-60).reverse();
   set($("feed"), `<h2>Activity <span class="muted">${items.length}</span></h2><div class="body"><ul class="feed">${items.map((e: any) => {
     const t = new Date(e.at).toLocaleTimeString([], { hour12: false });
-    const what = e.type === "edit" ? `${esc(e.tool)} <span class="muted">${esc(e.summary)}</span>`
+    const what = e.tool === "undo" ? `↶ ${esc(e.summary)}` : e.type === "edit" ? `${esc(e.tool)} <span class="muted">${esc(e.summary)}</span>`
       : e.type === "run.start" ? `Run started · ${esc(e.pattern ? `pattern ${e.pattern}` : "song")}`
       : e.type === "run.end" ? (e.error ? `Run failed: ${esc(e.error)}` : `Run done · ${e.summary.passes} passes · ${e.summary.voicesRun} voices · $${e.summary.costUsd.toFixed(4)}${e.summary.stopped ? ` · stopped: ${esc(e.summary.stopped)}` : ""}`)
       : e.phase === "wait" ? `${still(e) ? esc(waitFor(e)) : `Asked ${esc(who(e.source).replace("via MCP · ", ""))}`} · ${esc(chLabel(e))} <span class="muted">${esc(e.text)}</span>`
@@ -147,7 +151,7 @@ export function set(el: HTMLElement, html: string) {
 }
 let hintText = "";
 export const setHint = (t: string) => { if (t !== hintText) $("hint").textContent = hintText = t; };
-const DEFAULT_HINT = "Space play/stop · L pattern/song · F5 playlist · F6 rack · F7 piano roll · F9 mixer · F10 tracer";
+const DEFAULT_HINT = "Space play/stop · Ctrl+Z undo · L pattern/song · F5 playlist · F6 rack · F7 piano roll · F9 mixer · F10 tracer";
 
 let queued = false;
 export function paint() {
@@ -155,9 +159,35 @@ export function paint() {
   requestAnimationFrame(() => {
     queued = false;
     if (!S.project) return;
-    toolbarCtl(); toolbarStatus(); feed(); playlist(); rack(); piano(); mixer(); tracer();
+    toolbarCtl(); toolbarStatus(); feed(); playlist(); rack(); piano(); mixer(); tracer(); reportView();
     if (S.run.running) animate();
   });
+}
+
+// ---- shared with the agent: studio_view reads this, studio_focus moves it ----
+const PANEL_ID: Record<string, string> = { playlist: "playlist", rack: "rack", pianoroll: "piano", mixer: "mixer", tracer: "tracer" };
+let lastView = "";
+function reportView() {
+  const id = Object.keys(PANEL_ID).find((k) => PANEL_ID[k] === S.panel) ?? null;
+  const v = { panel: id, pattern: curPattern()?.id ?? null, channel: selChannel() ?? null, voice: S.voice, selection: S.voice != null ? `voice:${S.voice}` : S.channel ? `channel:${S.channel}` : S.pattern ? `pattern:${S.pattern}` : null };
+  const j = JSON.stringify(v);
+  if (j === lastView) return;
+  lastView = j; fetch("/api/view", { method: "POST", headers: { "content-type": "application/json" }, body: j }).catch(() => {});
+}
+function showFocus(f: any) {
+  if (f.pattern) S.pattern = f.pattern;
+  if (f.channel) S.channel = f.channel;
+  if (f.voice != null) S.voice = f.voice;
+  const panel = f.panel ?? (f.voice != null ? "tracer" : f.bus ? "mixer" : f.channel ? "pianoroll" : f.pattern ? "rack" : null);
+  const ids = [f.channel && `ch:${f.channel}`, f.pattern && `pat:${f.pattern}`, f.bus && `bus:${f.bus}`, f.voice != null && `voice:${f.voice}`].filter(Boolean) as string[];
+  for (const id of ids) S.flash.add(id);
+  paint();
+  requestAnimationFrame(() => requestAnimationFrame(() => { // after the repaint
+    const el = panel ? $(PANEL_ID[panel]) : null;
+    el?.classList.add("flash"); el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: "nearest" });
+    if (f.voice != null) document.querySelector(`[data-k="v:${f.voice}"]`)?.scrollIntoView({ block: "nearest" });
+    setTimeout(() => { for (const id of ids) S.flash.delete(id); el?.classList.remove("flash"); paint(); }, 1500);
+  }));
 }
 let anim = 0;
 function animate() { cancelAnimationFrame(anim); const f = () => { drawPiano(); if (S.run.running) anim = requestAnimationFrame(f); }; anim = requestAnimationFrame(f); }
@@ -169,6 +199,7 @@ document.addEventListener("click", (ev) => {
   const a = t.dataset.act;
   if (a === "play") play();
   else if (a === "mode") { S.mode = t.dataset.v; paint(); }
+  else if (a === "undo") post("/api/undo");
   else if (a === "errors") { $("errors").hidden = !$("errors").hidden; paint(); }
 });
 document.addEventListener("change", (ev) => {
@@ -179,10 +210,13 @@ document.addEventListener("change", (ev) => {
 const hintOf = (ev: Event) => setHint((ev.target as HTMLElement).closest?.<HTMLElement>("[data-hint]")?.dataset.hint ?? DEFAULT_HINT);
 document.addEventListener("mouseover", hintOf);
 document.addEventListener("focusin", hintOf);
+document.addEventListener("focusin", (ev) => { const p = (ev.target as HTMLElement).closest?.(".panel"); if (p) { S.panel = p.id; reportView(); } });
 const KEYS: Record<string, string> = { F5: "playlist", F6: "rack", F7: "piano", F9: "mixer", F10: "tracer" };
 document.addEventListener("keydown", (ev) => {
   const t = ev.target as HTMLElement;
-  if (t.closest("input, select, textarea, [contenteditable]") || ev.ctrlKey || ev.metaKey || ev.altKey) return;
+  if (t.closest("input, select, textarea, [contenteditable]")) return;
+  if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return void post("/api/undo"); }
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   if (KEYS[ev.key]) { ev.preventDefault(); $(KEYS[ev.key]).focus(); }
   else if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
   else if (ev.key === "l" || ev.key === "L") { S.mode = S.mode === "pat" ? "song" : "pat"; paint(); }
@@ -198,3 +232,4 @@ paint();
 const es = new EventSource("/api/events");
 es.addEventListener("state", (m) => { setState(JSON.parse(m.data), true); paint(); });
 es.addEventListener("event", (m) => { onEvent(JSON.parse(m.data), true); paint(); });
+es.addEventListener("focus", (m) => showFocus(JSON.parse(m.data)));

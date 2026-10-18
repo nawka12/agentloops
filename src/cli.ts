@@ -125,6 +125,7 @@ async function main() {
   if (cmd === "studio" && file) {
     const { studio } = await import("./studio.ts");
     const s = await studio({ file, port: values.port ? Number(values.port) : 4870 });
+    for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(0)); // the exit handler removes .agentloops/studio.json
     console.error(`agentloops studio: ${s.url}  (Ctrl+C to quit)`);
     if (!values["no-open"]) import("node:child_process").then((c) => c.spawn("xdg-open", [s.url], { stdio: "ignore", detached: true }).on("error", () => {}).unref());
     return;

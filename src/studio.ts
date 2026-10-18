@@ -1,24 +1,27 @@
 // `agentloops studio`: local web UI for watching an outside harness build and run a song.
 // Deviation from SPEC §13: Server-Sent Events (server -> browser) plus fetch POSTs (browser -> server) instead of a WebSocket.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, statSync, watch } from "node:fs";
-import { basename, dirname, join, resolve } from "node:path";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import { basename, dirname, resolve } from "node:path";
 import { stripTypeScriptTypes } from "node:module";
+import { randomBytes, timingSafeEqual } from "node:crypto";
 import { score } from "./cli.ts";
-import { applyPatch, check } from "./mcp.ts";
-import { appendEvent, eventsFile, loggedRender, refresh, writeJson } from "./sync.ts";
+import { check, createHost, RANK } from "./host.ts";
+import { eventsFile, refresh, studioFile } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
 const UI = new URL("../ui/", import.meta.url);
 const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript" };
 
 export async function studio(o: { file: string; port?: number }) {
-  const s = refresh({ file: resolve(o.file), p: null as any, ver: null as string | null });
-  if (!s.p) throw new Error(`cannot load ${o.file}`);
-  const dir = dirname(s.file), log = eventsFile(dir);
+  const file = resolve(o.file), dir = dirname(file), log = eventsFile(dir);
   mkdirSync(dirname(log), { recursive: true });
   const clients = new Set<ServerResponse>();
   const send = (type: string, data: any) => { const msg = `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`; for (const c of clients) c.write(msg); };
+  // The studio owns the project: its UI actions and every relayed MCP call go through this host (one undo stack, one set of runs).
+  let host: ReturnType<typeof createHost>;
+  try { host = createHost({ file, scope: "run", budget: null, notify: (t, d) => (t === "state" ? send("state", state()) : t === "tail" ? tail() : send(t, d)) }); }
+  catch (e: any) { throw new Error(`cannot load ${o.file}: ${e.message}`); }
   const withTakes = <T>(fn: (t: ReturnType<typeof openTakes>) => T): T => { const t = openTakes(dir); try { return fn(t); } finally { t.close(); } };
 
   const readEvents = (from: number) => {
@@ -32,25 +35,24 @@ export async function studio(o: { file: string; port?: number }) {
   };
   const recent = () => readEvents(Math.max(0, (existsSync(log) ? statSync(log).size : 0) - 200_000)).lines.slice(-300); // ponytail: tail window, may drop a cut first line
   const state = () => {
-    refresh(s);
+    const s = host.cur();
     // ponytail: the latest take's frames (capped at 500) ride along with every state push; page them if takes get big
     const { takes, latest } = withTakes((t) => { const takes = t.list(10) as any[], g = takes[0] && t.get(takes[0].id); return { takes, latest: g && { ...g, frames: t.frames(takes[0].id).slice(-500) } }; });
     let sc = ""; try { sc = score(s.p); } catch (e: any) { sc = `cannot draw the score yet: ${e.message}`; }
-    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: !!run };
+    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: [...host.runs.values()].some((r) => r.status === "running") };
   };
 
   // watch the project file (dir watch: atomic renames replace the inode) and tail the event log
   let t1: any, t2: any, offset = existsSync(log) ? statSync(log).size : 0;
-  const w1 = watch(dir, (_e, f) => { if (f !== basename(s.file)) return; clearTimeout(t1); t1 = setTimeout(() => { const v = s.ver; refresh(s); if (s.ver !== v) send("state", state()); }, 60); });
-  const tail = () => {
+  const w1 = watch(dir, (_e, f) => { if (f !== basename(file)) return; clearTimeout(t1); t1 = setTimeout(() => { const v = host.st!.ver; refresh(host.st!); if (host.st!.ver !== v) send("state", state()); }, 60); });
+  function tail() {
     if (existsSync(log) && statSync(log).size < offset) offset = 0; // truncated or deleted by hand
     const r = readEvents(offset); offset = r.size;
     for (const e of r.lines) send("event", e);
     if (r.lines.some((e) => e.type === "run.end")) send("state", state()); // new take
-  };
+  }
   const w2 = watch(dirname(log), (_e, f) => { if (f === basename(log)) { clearTimeout(t2); t2 = setTimeout(tail, 30); } });
 
-  let run: { ac: AbortController; promise: Promise<any> } | null = null;
   const body = (req: IncomingMessage) => new Promise<any>((ok, bad) => {
     let b = ""; req.on("data", (c) => { b += c; if (b.length > 1e6) req.destroy(); });
     req.on("end", () => { try { ok(b ? JSON.parse(b) : {}); } catch { bad(new Error("body must be JSON")); } });
@@ -64,32 +66,36 @@ export async function studio(o: { file: string; port?: number }) {
       res.write(": hi\n\n"); clients.add(res); req.on("close", () => clients.delete(res));
     },
     "GET /api/take/(\\w+)": (_q, res, m) => withTakes((t) => { const g = t.get(m[1]); g ? json(res, 200, { ...g, frames: t.frames(m[1]) }) : json(res, 404, { error: "unknown take" }); }),
+    // browser actions: the same tools an MCP client calls, as source "studio"
     "POST /api/patch": async (req, res) => {
-      const a = await body(req);
-      refresh(s);
-      const next = applyPatch(structuredClone(s.p), a.ops);
-      if (!next || typeof next !== "object" || Array.isArray(next)) throw new Error("the project must stay a JSON object");
-      s.p = next; s.ver = writeJson(s.file, next);
-      appendEvent(dir, { type: "edit", source: "studio", tool: "project_patch", summary: String(a.summary ?? a.ops.map((x: any) => `${x.op} ${x.path}`).join(", ")).slice(0, 200) });
-      send("state", state());
-      json(res, 200, { ok: true, errors: check(next) });
+      const a = await body(req), r = await host.call("project_patch", { ops: a.ops }, { source: "studio", summary: a.summary });
+      json(res, 200, { ok: true, errors: r.errors });
     },
     "POST /api/run": async (req, res) => {
       const a = await body(req);
-      if (run) return json(res, 409, { error: "a run is already playing" });
-      refresh(s);
-      const errors = check(s.p);
-      if (errors.length) return json(res, 400, { error: `fix the project first (${errors.length} errors)`, errors });
-      if (a.cache != null && !["fresh", "prefer"].includes(a.cache)) return json(res, 400, { error: 'cache must be "fresh" or "prefer"' });
-      // ponytail: any harness channel blocks Play, even if the chosen pattern does not use it
-      if ((s.p.channels ?? []).some((c: any) => c.generator?.plugin === "harness")) return json(res, 400, { error: "harness channels need a run started from your harness over Studio MCP (run_start)" });
-      const ac = new AbortController();
-      const promise = loggedRender({ p: structuredClone(s.p), dir }, { pattern: a.pattern, arrangement: a.arrangement, cache: a.cache, signal: ac.signal }, "studio")
-        .catch(() => {}).finally(() => { run = null; tail(); }); // tail now: don't wait on the watcher for run.end
-      run = { ac, promise };
+      if ([...host.runs.values()].some((r) => r.status === "running")) return json(res, 409, { error: "a run is already playing" });
+      await host.call("run_start", { pattern: a.pattern, arrangement: a.arrangement, cache: a.cache, wait: false }, { source: "studio" });
       json(res, 202, { ok: true });
     },
-    "POST /api/stop": async (_q, res) => { if (run) { run.ac.abort(); await run.promise; } json(res, 200, { ok: true }); },
+    "POST /api/stop": async (_q, res) => { if (host.runs.size) await host.call("run_stop", {}, { source: "studio" }); json(res, 200, { ok: true }); },
+    "POST /api/undo": async (_q, res) => json(res, 200, { ok: true, undone: (await host.call("undo", {}, { source: "studio" })).undone }),
+    "POST /api/view": async (req, res) => { const { panel, pattern, channel, voice, selection } = await body(req); host.view = { panel, pattern, channel, voice, selection }; json(res, 200, { ok: true }); },
+    // the MCP relay: NDJSON {progress} lines, then {result} or {error}. The token is only in studio.json (0600), never sent to a browser.
+    "POST /api/tool": async (req, res) => {
+      const got = Buffer.from(req.headers.authorization ?? ""), want = Buffer.from(`Bearer ${token}`);
+      if (got.length !== want.length || !timingSafeEqual(got, want)) return json(res, 401, { error: "unauthorized" });
+      const a = await body(req), ac = new AbortController();
+      res.on("close", () => { if (!res.writableFinished) ac.abort(); }); // the MCP client cancelled: the call's signal aborts (harness runs keep going)
+      res.writeHead(200, { "content-type": "application/x-ndjson" });
+      const line = (v: any) => res.write(JSON.stringify(v) + "\n");
+      try {
+        const result = await host.call(String(a.name), a.args, {
+          source: `mcp:${a.client ?? "unknown"}`, signal: ac.signal, progress: (m) => line({ progress: m }),
+          scope: a.scope in RANK ? a.scope : "read", budget: typeof a.budget === "number" ? a.budget : undefined, // fail closed on a missing scope
+        });
+        res.end(JSON.stringify({ result }) + "\n");
+      } catch (e: any) { res.end(JSON.stringify({ error: e.message }) + "\n"); }
+    },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {
       const name = m[1]?.slice(3) ?? "index.html", ext = name.slice(name.lastIndexOf("."));
       let src = readFileSync(new URL(name, UI), "utf8");
@@ -100,6 +106,7 @@ export async function studio(o: { file: string; port?: number }) {
   };
 
   let port = o.port ?? 4870;
+  const token = randomBytes(24).toString("hex"); // fresh per start; only written to studio.json (0600)
   const server = createServer(async (req, res) => {
     // only this origin: block DNS rebinding (Host) and cross-site POSTs (a page elsewhere could otherwise patch in a script and run it)
     const host = `127.0.0.1:${port}`, origin = req.headers.origin;
@@ -115,9 +122,19 @@ export async function studio(o: { file: string; port?: number }) {
   });
   await new Promise<void>((ok) => server.listen(port, "127.0.0.1", ok));
   port = (server.address() as any).port;
+  host.studioUrl = `http://127.0.0.1:${port}/`;
+  const info = studioFile(dir);
+  rmSync(info, { force: true });
+  writeFileSync(info, JSON.stringify({ port, token, pid: process.pid, file: host.st!.file }), { mode: 0o600 });
+  const unpublish = () => { try { if (JSON.parse(readFileSync(info, "utf8")).token === token) rmSync(info); } catch {} };
+  process.on("exit", unpublish);
   const ping = setInterval(() => { for (const c of clients) c.write(": ping\n\n"); }, 15000);
   return {
-    url: `http://127.0.0.1:${port}/`, port,
-    async close() { clearInterval(ping); w1.close(); w2.close(); clearTimeout(t1); clearTimeout(t2); await run?.promise; for (const c of clients) c.end(); server.closeAllConnections(); await new Promise((ok) => server.close(ok)); },
+    url: host.studioUrl, port,
+    async close() {
+      clearInterval(ping); w1.close(); w2.close(); clearTimeout(t1); clearTimeout(t2); unpublish(); process.off("exit", unpublish);
+      await Promise.all([...host.runs.values()].map((r) => (r.ac.abort(), r.promise))); // a run waiting on a harness would never end by itself
+       for (const c of clients) c.end(); server.closeAllConnections(); await new Promise((ok) => server.close(ok));
+    },
   };
 }

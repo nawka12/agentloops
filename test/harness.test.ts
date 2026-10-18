@@ -13,7 +13,7 @@ import { studio as startStudio } from "../src/studio.ts";
 const root = fileURLToPath(new URL("..", import.meta.url));
 const tmp = () => mkdtempSync(join(tmpdir(), "alp-h-"));
 const H = (params: any = {}) => ({ plugin: "harness", params });
-const NO_BRIDGE = /run started from your harness over Studio MCP/;
+const NO_BRIDGE = /run started from your harness over Studio MCP/; // what render() says when nobody bridges a harness channel
 
 /** Spawn `agentloops mcp --scope run`, open `p` from a temp file. `call` throws on isError and parses JSON text. */
 async function harnessSession(p: any) {
@@ -222,13 +222,18 @@ test("no bridge: render() fails a harness voice with the run_start message; a br
   assert.ok(aborted);
 });
 
-test("studio Play refuses a project with harness channels and says why", async () => {
+test("studio Play runs a project with harness channels: the voice waits for the harness (test/host.test.ts answers it over the relay)", async () => {
   const dir = tmp(), file = join(dir, "song.alp.json");
   writeFileSync(file, JSON.stringify(chordProject(["a"])));
   const s = await startStudio({ file, port: 0 });
   try {
     const r = await fetch(s.url + "api/run", { method: "POST", headers: { "content-type": "application/json" }, body: "{}" });
-    assert.equal(r.status, 400);
-    assert.match(((await r.json()) as any).error, NO_BRIDGE);
-  } finally { await s.close(); }
+    assert.equal(r.status, 202);
+    let waiting = false;
+    for (let i = 0; i < 50 && !waiting; i++) {
+      await new Promise((ok) => setTimeout(ok, 50));
+      waiting = ((await (await fetch(s.url + "api/state")).json()) as any).events.some((e: any) => e.type === "voice" && e.phase === "wait");
+    }
+    assert.ok(waiting);
+  } finally { await s.close(); } // close() stops the waiting run
 });

@@ -1,7 +1,7 @@
 // Cross-process sync between `agentloops mcp`, `agentloops studio` and the CLI: atomic project writes,
 // a version stamp for reload-before-edit, and the shared append-only event log.
-import { appendFileSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
-import { basename, dirname, join } from "node:path";
+import { appendFileSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { render, type RunOpts } from "./engine.ts";
 
@@ -29,6 +29,19 @@ export const eventsFile = (dir: string) => join(dir, ".agentloops", "events.json
 export function appendEvent(dir: string, e: object) {
   mkdirSync(join(dir, ".agentloops"), { recursive: true });
   appendFileSync(eventsFile(dir), JSON.stringify({ ...e, at: Date.now() }) + "\n");
+}
+
+/** `agentloops studio` publishes {port, token, pid, file} here (mode 0600) while it runs; `agentloops mcp` relays to it. */
+export const studioFile = (dir: string) => join(dir, ".agentloops", "studio.json");
+/** The live studio hosting `file`, or null. A studio.json whose pid is dead is deleted. ponytail: a reused pid looks alive; the failed connection then deletes it. */
+export function findStudio(file: string): { port: number; token: string; pid: number; file: string } | null {
+  const f = studioFile(dirname(file));
+  try {
+    const i = JSON.parse(readFileSync(f, "utf8"));
+    if (resolve(i.file) !== file) return null; // another project's studio, same folder
+    try { process.kill(i.pid, 0); } catch (e: any) { if (e.code !== "EPERM") { rmSync(f, { force: true }); return null; } }
+    return i;
+  } catch { return null; }
 }
 
 /** render() that logs run.start, every engine event, and run.end (with the result summary) to the event log. */
