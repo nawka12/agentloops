@@ -228,6 +228,12 @@ export async function studio(o: { file: string; port?: number }) {
     "GET /vendor/(preact|htm)/((?:[\\w-]+/)*[\\w.-]+\\.js)": (_q, res, m) => {
       res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" }); res.end(readFileSync(new URL(m[2], VENDOR[m[1]])));
     },
+    // installable-app bits (the app window and "Install" in a browser use them); behind the same Host/Origin guard as everything else
+    "GET /manifest.webmanifest": (_q, res) => {
+      res.writeHead(200, { "content-type": "application/manifest+json", "cache-control": "no-store" });
+      res.end(JSON.stringify({ name: "AgentLoops", short_name: "AgentLoops", display: "standalone", start_url: "./", background_color: "#1d2226", theme_color: "#1d2226", icons: [{ src: "icon.svg", sizes: "any", type: "image/svg+xml" }] }));
+    },
+    "GET /icon.svg": (_q, res) => { res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-store" }); res.end(readFileSync(new URL("icon.svg", UI))); },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {
       const name = m[1]?.slice(3) ?? "index.html", ext = name.slice(name.lastIndexOf("."));
       let src = readFileSync(new URL(name, UI), "utf8");
