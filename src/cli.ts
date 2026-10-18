@@ -127,8 +127,13 @@ function openWindow(url: string, file: string, browserFlag?: boolean) {
   const exe = browserFlag ? undefined : findBrowser();
   if (!exe) return openDefault(url);
   const args = [`--app=${url}`, `--user-data-dir=${windowProfile(file)}`, "--no-first-run", "--no-default-browser-check", "--class=AgentLoops"];
-  // ponytail: a second studio on the same song hands off to the first one's browser process and exits at once, which would quit this studio; one studio per song is the norm
-  spawn(exe, args, { stdio: "ignore" }).on("error", () => openDefault(url)).on("exit", () => { console.error("agentloops studio: window closed, quitting"); process.exit(0); });
+  // a browser that exits within seconds handed the window to another process (a second studio on this song, a launcher script):
+  // the window's lifetime is unknown then, so the studio stays up until Ctrl+C
+  const t0 = Date.now();
+  spawn(exe, args, { stdio: "ignore" }).on("error", () => openDefault(url)).on("exit", () => {
+    if (Date.now() - t0 < 3000) return console.error("agentloops studio: the window belongs to another browser process; Ctrl+C to quit");
+    console.error("agentloops studio: window closed, quitting"); process.exit(0);
+  });
 }
 
 /** the first song in ~/AgentLoops; the folder is made the way `init` makes it when it has none */
