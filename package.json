@@ -1,5 +1,5 @@
 {
-  "name": "agentloops",
+  "name": "@nawka12/agentloops",
   "version": "1.0.0",
   "description": "FL Studio, but for AI agents: build multi-agent pipelines as songs, driven from Claude Code or any MCP harness",
   "license": "MIT",
@@ -32,5 +32,8 @@
     "@modelcontextprotocol/sdk": "^1.32.1",
     "htm": "^3.1.1",
     "preact": "^10.29.8"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }

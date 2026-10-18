@@ -14,7 +14,13 @@ Use it from **Claude Code**, Codex, Cursor, opencode or any MCP client. The codi
 
 ## Install
 
-Straight from GitHub (AgentLoops isn't on the npm registry yet):
+```sh
+npm install -g @nawka12/agentloops
+```
+
+That gives you the `agentloops` command. To try it without installing, use `npx @nawka12/agentloops <command>`.
+
+Straight from GitHub:
 
 ```sh
 npm install -g --allow-git=root github:nawka12/agentloops
@@ -66,7 +72,7 @@ The studio's **⇄ connect** button writes the same files for the song that is o
 ## Try the demo
 
 ```sh
-agentloops studio "$(npm root -g)/agentloops/examples/kawaii-bass.alp.json"
+agentloops studio "$(npm root -g)/@nawka12/agentloops/examples/kawaii-bass.alp.json"
 ```
 
 Press **Space** to play. **Shift+click ⤓** saves an MP3 next to the song. It is 52 bars, with 8 script channels for chords, bass, arp, bell hook, drums, riser, vocal chops and a lyricist. The lyricist listens to the vocal chops and sends each sung line to Master, so the Monitor (F11) shows the lyrics as they're sung.
