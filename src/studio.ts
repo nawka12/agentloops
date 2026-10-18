@@ -2,7 +2,7 @@
 // Deviation from SPEC §13: Server-Sent Events (server -> browser) plus fetch POSTs (browser -> server) instead of a WebSocket.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
-import { basename, dirname, resolve } from "node:path";
+import { basename, dirname, resolve, sep } from "node:path";
 import { createRequire, stripTypeScriptTypes } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -17,7 +17,7 @@ import { openTakes } from "./takes.ts";
 const UI = new URL("../ui/", import.meta.url);
 const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript", ".js": "text/javascript" };
 // where npm put them (hoisted or nested): the package folder is the entry file's path up to `/<name>/`
-const VENDOR = Object.fromEntries(["preact", "htm"].map((n) => { const f = createRequire(import.meta.url).resolve(n); return [n, pathToFileURL(f.slice(0, f.lastIndexOf(`/${n}/`) + n.length + 2))]; }));
+const VENDOR = Object.fromEntries(["preact", "htm"].map((n) => { const f = createRequire(import.meta.url).resolve(n); return [n, pathToFileURL(f.slice(0, f.lastIndexOf(`${sep}${n}${sep}`) + n.length + 2))]; }));
 const DEMOS = new URL("../examples/", import.meta.url), PRESETS = new URL("../presets/", import.meta.url);
 const SONG = /^[\w.-]+\.alp\.json$/;
 /** `*.alp.json` files in a folder, with their song names */
