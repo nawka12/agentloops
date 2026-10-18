@@ -81,6 +81,7 @@ export function createMixer(p: any, run: any) {
 
   async function emit(b: any, frames: any[]) {
     b.emitted.push(...frames);
+    for (const f of frames) run.onFrame?.(b.id, f);
     for (const s of b.sends)
       for (const f of frames)
         if (s.mode !== "final" || f.final) await receive(f, s.to, s.mode === "sidechain");

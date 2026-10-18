@@ -83,7 +83,7 @@ const PLUGINS = [
 const S = { type: "string" }, B = { type: "boolean" }, N = { type: "number" }, O = { type: "object" };
 const obj = (properties: any = {}, required: string[] = []) => ({ type: "object", properties, required });
 export const RANK = { read: 0, edit: 1, run: 2 } as const;
-const PANELS = ["playlist", "rack", "pianoroll", "mixer", "tracer"];
+const PANELS = ["playlist", "rack", "pianoroll", "mixer", "tracer", "monitor"];
 const NO_STUDIO = "no studio open: run `agentloops studio <file>` to see it";
 const clip = (s: any, n = 200) => { s = typeof s === "string" ? s : JSON.stringify(s); return s == null ? s : s.length > n ? s.slice(0, n) + "…" : s; };
 // validate() is not shape-hardened; a crash on a half-built project is reported as one error instead of rejecting the edit
@@ -101,7 +101,7 @@ function outline(p: any) {
 }
 
 /** Who is calling and how: `progress` reports a run's barriers, `signal` aborts the call (client cancelled). `scope` and `budget` come from the relaying MCP process. */
-export type Ctx = { source: string; signal: AbortSignal; progress: (msg: string) => void; scope?: keyof typeof RANK; budget?: number; tool?: string; summary?: string };
+export type Ctx = { source: string; signal: AbortSignal; progress: (msg: string) => void; scope?: keyof typeof RANK; budget?: number; tool?: string; summary?: string; repeat?: number };
 type Undo = { snap: string; source: string; tool: string; summary: string };
 
 export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?: number | null; notify?: (type: "state" | "tail" | "focus", data?: any) => void }) {
@@ -203,7 +203,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     { name: "studio_status", scope: "read", description: 'Who hosts the project: {host: "studio" (a studio window is open on it, with studioUrl; your calls are relayed to it) | "headless", file, scope}.', inputSchema: obj(), run: (_: any, c: Ctx) => ({ host: h.studioUrl ? "studio" : "headless", ...(h.studioUrl ? { studioUrl: h.studioUrl } : {}), file: st?.file ?? null, scope: c.scope ?? o.scope }) },
     {
       name: "studio_focus", scope: "read",
-      description: "Show the user something in the open studio: scrolls to and flashes a panel (playlist, rack, pianoroll, mixer, tracer) and selects a pattern, channel, bus or voice (a number from the Tracer / a waiting request). Call it after an edit the user should see. Errors when no studio is open.",
+      description: "Show the user something in the open studio: scrolls to and flashes (and opens) a panel (playlist, rack, pianoroll, mixer, tracer, monitor) and selects a pattern, channel, bus or voice (a number from the Tracer / a waiting request). Call it after an edit the user should see. Errors when no studio is open.",
       inputSchema: obj({ panel: S, channel: S, pattern: S, bus: S, voice: N }),
       run: (a: any) => {
         needStudio();
@@ -216,7 +216,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
         return { ok: true, focused: f };
       },
     },
-    { name: "studio_view", scope: "read", description: "What the user is looking at in the open studio: {panel, pattern, channel, voice, selection} (selection is the most specific selected entity, like voice:3 or channel:writer). Errors when no studio is open.", inputSchema: obj(), run: () => { needStudio(); return h.view; } },
+    { name: "studio_view", scope: "read", description: "What the user is looking at in the open studio: {panel, pattern, channel, voice, selection, windows} (selection is the most specific selected entity, like voice:3 or channel:writer; windows lists the open floating windows). Errors when no studio is open.", inputSchema: obj(), run: () => { needStudio(); return h.view; } },
     // edit
     {
       name: "project_create", scope: "edit",
@@ -250,23 +250,25 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     // run
     {
       name: "run_start", scope: "run",
-      description: "Play an arrangement (default: the first) or loop one pattern. Spends money if channels use llm.agent: budget is capped by the server's --budget. wait:true (default) blocks and sends progress notifications at each barrier and pass; cancelling the call stops the run. wait:false returns a runId for run_status / run_stop. If the project has harness channels, YOU are their agent: the call returns {status: \"waiting\", waiting: [requests]} as soon as the run needs you (do the work, answer with voice_reply), cancelling it leaves the run going, and wait:false is resumed with voice_reply({replies: []}) or run_status. Refuses to start while project_validate reports errors.",
-      inputSchema: obj({ arrangement: S, pattern: S, input: {}, cache: S, budget: N, wait: B }),
+      description: "Play an arrangement (default: the first) or loop one pattern. Spends money if channels use llm.agent: budget is capped by the server's --budget. wait:true (default) blocks and sends progress notifications at each barrier and pass; cancelling the call stops the run. wait:false returns a runId for run_status / run_stop. If the project has harness channels, YOU are their agent: the call returns {status: \"waiting\", waiting: [requests]} as soon as the run needs you (do the work, answer with voice_reply), cancelling it leaves the run going, and wait:false is resumed with voice_reply({replies: []}) or run_status. Refuses to start while project_validate reports errors. pace: \"project\" (or a BPM number) plays no faster than the project tempo (clock.bpm, default 120): pass it when the user is watching in the studio; omit it for headless work.",
+      inputSchema: obj({ arrangement: S, pattern: S, input: {}, cache: S, budget: N, wait: B, pace: {} }),
       run: async (a: any, c: Ctx) => {
         const s = cur(), errors = check(s.p);
         if (errors.length) throw new Error(`fix the project first (${errors.length} errors):\n${JSON.stringify(errors, null, 2)}`);
         if (a.cache != null && !["fresh", "prefer"].includes(a.cache)) throw new Error('cache must be "fresh" or "prefer"');
+        const pace = a.pace === "project" ? (s.p.clock?.bpm ?? 120) : a.pace;
+        if (pace != null && !(typeof pace === "number" && pace > 0)) throw new Error('pace must be "project" or a BPM number > 0');
         const wait = a.wait !== false, caps = [a.budget, s.p.budgets?.runUsd, c.budget ?? cap].filter((x) => x != null), budget = caps.length ? Math.min(...caps) : undefined;
-        const r: any = { id: randomUUID().slice(0, 8), status: "running", ac: new AbortController(), pass: 0, costUsd: 0, pos: null, started: Date.now(), waiting: new Map<number, any>(), wakers: new Set<() => void>(),
+        const r: any = { id: randomUUID().slice(0, 8), repeat: c.repeat, status: "running", ac: new AbortController(), pass: 0, costUsd: 0, pos: null, started: Date.now(), waiting: new Map<number, any>(), wakers: new Set<() => void>(),
           bridged: (s.p.channels ?? []).some((c: any) => c.generator?.plugin === "harness") };
         runs.set(r.id, r);
         r.promise = loggedRender({ p: structuredClone(s.p), dir: dirname(s.file) }, {
-          arrangement: a.arrangement, pattern: a.pattern, input: a.input, cache: a.cache, budget, signal: r.ac.signal, runId: r.id, harness: bridge(r),
+          arrangement: a.arrangement, pattern: a.pattern, input: a.input, cache: a.cache, budget, pace, signal: r.ac.signal, runId: r.id, harness: bridge(r),
           onEvent: (e) => {
             r.pass = e.pass; r.costUsd = e.costUsd; if (e.pos) r.pos = e.pos;
             if (e.type !== "voice") r.notify?.(e);
           },
-        }, c.source).then(
+        }, c.source, c.repeat ? { repeat: c.repeat } : {}).then(
           (x) => { r.status = x.stopped ? "stopped" : "done"; r.result = { passes: x.passes, stopped: x.stopped, voicesRun: x.voicesRun, cacheHits: x.cacheHits, skipped: x.skipped, costUsd: x.costUsd, master: x.master.map((f: any) => ({ text: f.text, json: f.json })) }; },
           (e) => { r.status = "failed"; r.error = e.message; },
         ).then(() => notify("tail")); // tail now: an open studio shows run.end and the new take without waiting on its file watcher

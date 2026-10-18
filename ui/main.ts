@@ -1,58 +1,99 @@
-// AgentLoops Studio, browser side. Served type-stripped by src/studio.ts.
-// ponytail: plain DOM re-render; adopt Preact when panels gain rich interactive state
-import { drawPiano, mixer, piano, playlist, rack, selChannel, tracer } from "./panels.ts";
+// AgentLoops Studio, browser side. Served type-stripped by src/studio.ts; Preact + htm come from node_modules through the import map.
+// One global store S, re-rendered from the root on every change (Preact diffs it, so focus and drags survive). Gesture state lives in module variables.
+import { h, render } from "preact";
+import htm from "htm";
+import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
+import { blip, chime, click, setMetro, setOn, setVol, sound, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
+export const html = htm.bind(h);
 export const esc = (s: any) => String(s ?? "").replace(/[&<>"']/g, (c) => `&#${c.charCodeAt(0)};`);
 export const ptr = (s: string) => s.replace(/~/g, "~0").replace(/\//g, "~1");
-export const $ = (id: string) => document.getElementById(id)!;
-
-type Run = { id?: string; running: boolean; start: number; end?: number; pos?: string; pass: number; cost: number; budget?: number; pattern?: string;
-  voices: Map<number, any>; buses: Record<string, { frames: number; cost: number; errors: number }>; summary?: any; error?: string };
-export const S: any = {
-  project: null, errors: [], takes: [], latest: null, events: [] as any[], score: "",
-  mode: "song", pattern: null as string | null, channel: null as string | null, cache: false, voice: null as number | null,
-  run: { running: false, start: 0, pass: 0, cost: 0, voices: new Map(), buses: {} } as Run,
-  flash: new Set<string>(), lastHarness: null as any,
+export const BAR = 384, STEP = 24;
+/** tick count or "bar:step[:tick]" -> ticks (mirror of src/project.ts pos) */
+export const pos = (v: any): number => {
+  if (Number.isInteger(v)) return v;
+  const m = /^(\d+):(\d+)(?::(\d+))?$/.exec(String(v));
+  return m ? (+m[1] - 1) * BAR + (+m[2] - 1) * STEP + +(m[3] ?? 0) : 0;
 };
+export const posStr = (t: number) => `${Math.floor(t / BAR) + 1}:${String(Math.floor((t % BAR) / STEP) + 1).padStart(2, "0")}`;
+const lcdPos = (t: number) => `${Math.floor(t / BAR) + 1}:${String(Math.floor((t % BAR) / STEP) + 1).padStart(2, "0")}:${String(Math.floor(t % STEP)).padStart(2, "0")}`;
+export const patLen = (pat: any) => (pat?.lengthSteps ?? 16) * STEP;
 
-export async function patch(ops: any[], summary: string) {
-  const r = await fetch("/api/patch", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ ops, summary }) });
-  if (!r.ok) setHint(`Edit refused: ${(await r.json()).error}`);
-}
+type Run = { id?: string; running: boolean; start: number; end?: number; pos?: string; tick: number; at: number; pass: number; cost: number; budget?: number; pattern?: string;
+  repeat?: number; pace?: number; voices: Map<number, any>; buses: Record<string, { frames: number; cost: number; errors: number; at?: number }>; summary?: any; error?: string };
+const newRun = (e?: any): Run => ({ id: e?.runId, running: !!e, start: e?.at ?? 0, tick: 0, at: e?.at ?? 0, pass: 0, cost: 0, budget: e?.budget, pattern: e?.pattern, repeat: e?.repeat, pace: e?.pace, voices: new Map(), buses: {} });
+export const S: any = {
+  project: null, errors: [], takes: [], latest: null, events: [] as any[], file: "", serverPlaying: false,
+  mode: "pat", pattern: null as string | null, channel: null as string | null, cache: false, voice: null as number | null, panel: "playlist",
+  run: newRun(), monitor: [] as any[], monitorBus: "master", monTab: "master", preview: new Map<string, string>(),
+  runs: [] as any[], // one entry per run (a PAT repeat or a song play): {id, repeat, master: [frames], ended, cached}
+  flash: new Set<string>(), lastHarness: null as any, bpm: null as number | null, showErrors: false,
+};
+export const playing = () => S.run.running || S.serverPlaying;
+export const bpm = () => S.bpm ?? S.project?.clock?.bpm ?? 120;
+
 async function post(path: string, body: any = {}) {
   const r = await fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
   if (!r.ok) setHint(`${path.slice(5)} refused: ${String((await r.json()).error).split("\n")[0]}`);
+  return r.ok;
 }
-const play = () => S.run.running ? post("/api/stop")
-  : post("/api/run", { ...(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id }), cache: S.cache ? "prefer" : "fresh" });
+/** Every studio edit: one JSON Patch, one undo step, source "studio". */
+export const patch = (ops: any[], summary: string) => ops.length && post("/api/patch", { ops, summary });
+const play = () => (unlock(), playing()) ? post("/api/stop")
+  : post("/api/run", { ...(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id, cache: S.cache ? "prefer" : "fresh" }), pace: "project" });
 export const curPattern = () => (S.project?.patterns ?? []).find((p: any) => p.id === S.pattern) ?? S.project?.patterns?.[0];
 export const chColor = (id: string) => (S.project?.channels ?? []).find((c: any) => c.id === id)?.color ?? "#9aa5ae";
+export const chName = (id: string) => (S.project?.channels ?? []).find((c: any) => c.id === id)?.name ?? id;
 
 // ---- run state, rebuilt from the shared event log ----
-function applyEvent(e: any) {
-  const r: Run = S.run;
-  if (e.type === "run.start") S.run = { id: e.runId, running: true, start: e.at, pass: 0, cost: 0, budget: e.budget, pattern: e.pattern, voices: new Map(), buses: {} };
-  else if (e.runId && e.runId !== r.id) return; // a voice line from an older run
-  else if (e.type === "run.end") {
-    Object.assign(r, { running: false, end: e.at, summary: e.summary, error: e.error, cost: e.summary?.costUsd ?? r.cost });
-    // live meters only see frames voices wrote directly; the summary also counts frames that came through sends
-    for (const [id, b] of Object.entries<any>(e.summary?.buses ?? {})) r.buses[id] = { cost: 0, ...r.buses[id], frames: b.frames, errors: b.errors };
+/** absolute run tick -> {pat, rel}: which pattern the head is in and where */
+const wrap = (t: number, len: number) => (t > 0 && t % len === 0 ? len : t % len); // the end of a pattern stays at its end, not back at 1:01
+export function relTick(r: Run, t: number) {
+  if (r.pattern) { const pat = (S.project?.patterns ?? []).find((p: any) => p.id === r.pattern); return { pat: r.pattern, rel: wrap(t, Math.max(1, patLen(pat))) }; }
+  const c = clipsOf().find((c: any) => t >= c.s && t < c.s + c.l) ?? clipsOf().findLast((c: any) => t >= c.s);
+  return { pat: c?.ref, rel: c ? wrap(Math.min(t - c.s, c.l), Math.max(1, patLen(c.p))) : t };
+}
+export const noteKey = (pat: string, ch: string, key: number, rel: number) => `${pat}|${ch}|${key}|${rel}`;
+const audible = (ch: string) => { const cs: any[] = S.project?.channels ?? [], c = cs.find((x) => x.id === ch); return !!c && !c.mute && (!cs.some((x) => x.solo) || !!c.solo); };
+const plugin = (ch: string) => (S.project?.channels ?? []).find((c: any) => c.id === ch)?.generator?.plugin;
+function applyEvent(e: any, live: boolean) {
+  const r: Run = S.run, hist = S.runs.find((x: any) => x.id === e.runId);
+  if (e.type === "run.start") { S.run = newRun(e); S.runs.push({ id: e.runId, repeat: e.repeat, pattern: e.pattern, master: [] }); if (S.runs.length > 60) S.runs.shift(); }
+  if (e.type === "run.end" && hist) Object.assign(hist, { ended: true, cached: !e.summary?.voicesRun && e.summary?.cacheHits > 0 });
+  if (e.type === "frame" && e.bus === "master" && e.final && hist) hist.master.push(e);
+  if (live && e.runId === r.id) { // sonification: only for what happens now, never for the replayed log
+    const id = `${e.runId}:${e.voice}`;
+    if (e.type === "voice" && e.phase === "start" && audible(e.channel)) voiceStart(id, e.key, plugin(e.channel));
+    if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel));
+    if (e.type === "frame" && e.kind === "error") blip();
+    if (e.type === "frame" && e.bus === "master" && e.final && e.kind !== "error") chime();
+    if (e.type === "run.end") stopAll();
   }
-  else if (["barrier", "pass", "voice"].includes(e.type)) {
-    r.pass = e.pass; r.cost = e.costUsd; if (e.pos) r.pos = e.pos;
+  if (e.type === "run.start") return;
+  if (e.runId && e.runId !== r.id) return; // a line from an older run
+  if (e.type === "run.end") Object.assign(r, { running: false, end: e.at, summary: e.summary, error: e.error, cost: e.summary?.costUsd ?? r.cost });
+  else if (["barrier", "pass", "voice", "frame"].includes(e.type)) {
+    r.pass = e.pass; r.cost = e.costUsd;
+    if (e.type === "barrier" || e.type === "pass") { r.tick = e.tick ?? pos(e.pos ?? 0); r.at = e.at; if (e.pos) r.pos = e.pos; }
     if (e.type === "voice") {
-      r.voices.set(e.voice, { ...r.voices.get(e.voice), ...e, status: ({ start: "running", wait: "waiting", resume: "running" } as any)[e.phase] ?? e.status });
+      r.voices.set(e.voice, { ...r.voices.get(e.voice), ...e, ...(e.phase === "start" ? { startAt: e.at } : {}), status: ({ start: "running", wait: "waiting", resume: "running" } as any)[e.phase] ?? e.status });
       if (e.phase === "end") {
         const b = (r.buses[e.bus] ??= { frames: 0, cost: 0, errors: 0 });
-        b.frames += e.frames ?? 0; b.cost += e.voiceCostUsd ?? 0; if (e.status === "failed") b.errors++;
+        b.cost += e.voiceCostUsd ?? 0; if (e.status === "failed") b.errors++;
+        if (e.tick != null && e.text) { const { pat, rel } = relTick(r, e.tick); S.preview.set(noteKey(pat, e.channel, e.key, rel), e.text); }
       }
+    }
+    if (e.type === "frame") {
+      const b = (r.buses[e.bus] ??= { frames: 0, cost: 0, errors: 0 });
+      b.frames++; b.at = e.at; if (e.kind === "error") b.errors++;
+      S.monitor.push({ ...e, repeat: r.repeat }); if (S.monitor.length > 400) S.monitor.shift();
     }
   }
 }
 function onEvent(e: any, live: boolean) {
   S.events.push(e); if (S.events.length > 400) S.events.shift();
   if (String(e.source).startsWith("mcp:") && (e.type === "edit" || e.type === "run.start")) { S.lastHarness = e; if (live) tryFlash(); }
-  applyEvent(e);
+  applyEvent(e, live);
 }
 
 // ---- edit flash: diff the old and new project by id, show it when an MCP edit caused it ----
@@ -80,19 +121,76 @@ function tryFlash() {
   setTimeout(() => { for (const id of ids) S.flash.delete(id); paint(); }, 1500);
 }
 export const fl = (id: string) => (S.flash.has(id) ? " flash" : "");
-
 function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
-  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, score: st.score, file: st.file });
+  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running });
+  if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;
   if (ids.size) { pending = { ids, at: Date.now() }; tryFlash(); }
 }
 
-// ---- toolbar, feed, hint ----
-const fmtT = (ms: number) => { if (ms < 10_000) return `${(ms / 1000).toFixed(2)}s`; const s = Math.max(0, Math.round(ms / 1000)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+// ---- floating windows: the Playlist is the background, the rest float over it (FL's window model) ----
+export const WINS: Record<string, { title: string; key: string; panel: string }> = {
+  playlist: { title: "Playlist", key: "F5", panel: "playlist" }, rack: { title: "Channel rack", key: "F6", panel: "rack" }, piano: { title: "Piano roll", key: "F7", panel: "pianoroll" },
+  mixer: { title: "Mixer", key: "F9", panel: "mixer" }, tracer: { title: "Tracer", key: "F10", panel: "tracer" }, monitor: { title: "Monitor", key: "F11", panel: "monitor" },
+};
+const KEYS: Record<string, string> = Object.fromEntries(Object.entries(WINS).map(([id, w]) => [w.key, id]));
+function defaultWins() {
+  // the Playlist's first tracks stay visible; rack and piano roll over its left side, Monitor right, Mixer bottom
+  const W = innerWidth, H = innerHeight - 64, mw = Math.min(440, W * 0.3), chs: any[] = S.project?.channels ?? [];
+  const rh = 64 + 30 * Math.min(8, chs.length || 3), keys = Math.max(3, ...chs.map((c) => c.keymap?.length ?? 0)), py = 200 + rh;
+  return {
+    playlist: { open: true }, rack: { x: 124, y: 186, w: Math.min(700, W - mw - 150), h: rh, open: true, z: 3 },
+    piano: { x: 124, y: py, w: Math.min(1000, W - mw - 150), h: Math.max(160, Math.min(H - 236 - py, 70 + 34 * Math.min(12, keys))), open: true, z: 2 },
+    mixer: { x: 12, y: H - 256, w: Math.min(W - mw - 36, 40 + 126 * ((S.project?.mixer?.buses?.length ?? 0) + 1)), h: 248, open: true, z: 4 }, monitor: { x: W - mw - 12, y: 8, w: mw, h: H - 16, open: true, z: 5 },
+    tracer: { x: 160, y: 120, w: Math.min(980, W - 320), h: 420, open: false, z: 1 },
+  } as Record<string, any>;
+}
+const LS = "agentloops.windows.v1";
+const loadWins = () => { const d = defaultWins(); try { const s = JSON.parse(localStorage.getItem(LS) ?? "{}"); for (const k in d) Object.assign(d[k], s[k]); } catch {} return d; };
+const saveWins = () => { try { localStorage.setItem(LS, JSON.stringify(S.wins)); } catch {} };
+let zTop = 10;
+export function front(id: string) {
+  const w = S.wins[id];
+  if (S.panel !== id) { S.panel = id; paint(); }
+  if (id !== "playlist" && w.z !== zTop) { w.z = ++zTop; paint(); }
+}
+export function toggleWin(id: string, show?: boolean) {
+  const w = S.wins[id]; w.open = show ?? !w.open;
+  if (w.open) front(id);
+  saveWins(); paint();
+}
+/** drag a window by its title bar, or resize it by the corner grip */
+function dragWin(ev: PointerEvent, id: string, mode: "move" | "size") {
+  if (ev.button !== 0 || (ev.target as HTMLElement).closest("button")) return;
+  ev.preventDefault(); front(id);
+  const w = S.wins[id], x0 = ev.clientX, y0 = ev.clientY, a = { ...w };
+  const mv = (e: PointerEvent) => {
+    const dx = e.clientX - x0, dy = e.clientY - y0;
+    if (mode === "move") { w.x = Math.max(-a.w + 80, Math.min(innerWidth - 80, a.x + dx)); w.y = Math.max(0, Math.min(innerHeight - 90, a.y + dy)); }
+    else { w.w = Math.max(240, a.w + dx); w.h = Math.max(120, a.h + dy); }
+    paint();
+  };
+  const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); saveWins(); };
+  addEventListener("pointermove", mv); addEventListener("pointerup", up);
+}
+function Win({ id, sub, children }: any) {
+  const w = S.wins[id], d = WINS[id];
+  if (!w.open) return null;
+  return html`<section id=${id} class=${`win${S.panel === id ? " front" : ""}`} tabindex="-1" aria-label=${`${d.title}, ${d.key}`}
+      style=${`left:${w.x}px;top:${w.y}px;width:${w.w}px;height:${w.h}px;z-index:${10 + w.z}`} onPointerDown=${() => front(id)}>
+    <header class="tbar" onPointerDown=${(e: PointerEvent) => dragWin(e, id, "move")} data-hint=${`${d.title}: drag the title bar to move, the corner to resize. ${d.key} shows or hides it.`}>
+      <b>${d.title}</b><span class="sub">${sub}</span><kbd>${d.key}</kbd>
+      <button class="x" onClick=${() => toggleWin(id, false)} aria-label=${`Close ${d.title}`} data-hint=${`Close (${d.key} brings it back)`}>×</button></header>
+    <div class="wbody">${children}</div>
+    <i class="grip" onPointerDown=${(e: PointerEvent) => dragWin(e, id, "size")} aria-hidden="true"></i></section>`;
+}
+
+// ---- toolbar ----
+const fmtT = (ms: number) => { const s = Math.max(0, ms / 1000); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${(s % 60).toFixed(1).padStart(4, "0")}`; };
 const ago = (at: number) => { const s = Math.round((Date.now() - at) / 1000); return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.round(s / 60)}m ago` : `${Math.round(s / 3600)}h ago`; };
 const NAMES: Record<string, string> = { "claude-code": "Claude Code", "claude-ai": "Claude" };
-/** Voices of the running run that wait for the outside harness to answer (a harness channel's note), and who is expected to. */
+/** Voices of the running run that wait for the outside harness to answer (a harness channel's note). */
 export const waiting = (): any[] => (S.run.running ? [...S.run.voices.values()].filter((v: any) => v.status === "waiting") : []);
 export const waitFor = (v: any) => {
   const c = String(v?.source ?? "");
@@ -100,76 +198,144 @@ export const waitFor = (v: any) => {
 };
 export const who = (src: string) => src?.startsWith("mcp:") ? `via MCP · ${NAMES[src.slice(4)] ?? src.slice(4)}` : src === "cli" ? "CLI" : src ?? "";
 
-function toolbarCtl() {
-  const pats = S.project?.patterns ?? [];
-  set($("tb-ctl"), `
-    <button class="play" data-act="play" aria-pressed="${S.run.running}" aria-label="${S.run.running ? "Stop" : "Play"} (Space)" data-hint="${S.run.running ? "Stop the run (Space). The take is still saved." : `Play the ${S.mode === "pat" ? "pattern" : "song"} (Space)`}" data-k="play">${S.run.running ? "■" : "▶"}</button>
-    <span class="seg" role="group" aria-label="Play mode (L)">
-      <button data-act="mode" data-v="pat" aria-pressed="${S.mode === "pat"}" data-hint="Pattern mode: loop the selected pattern on its own (L)" data-k="pat">PAT</button><button data-act="mode" data-v="song" aria-pressed="${S.mode === "song"}" data-hint="Song mode: play the arrangement (L)" data-k="song">SONG</button>
-    </span>
-    <label data-hint="Pattern shown in the rack and piano roll, and played in PAT mode"><span class="sr">Pattern</span>
-      <select data-act="pattern" data-k="patsel">${pats.map((p: any) => `<option value="${esc(p.id)}"${p.id === curPattern()?.id ? " selected" : ""}>${esc(p.name ?? p.id)}</option>`).join("")}</select></label>
-    <button data-act="undo" data-k="undo" ${S.project ? "" : "disabled"} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶ Undo</button>
-    <label data-hint="Replay unchanged voices from earlier takes instead of running them again"><input type="checkbox" data-act="cache" data-k="cache"${S.cache ? " checked" : ""}> Cache</label>
-    <span class="muted" data-hint="Project file">${esc(S.project?.name)} <small>${esc(S.file)}</small></span>`);
-}
-function toolbarStatus() {
-  const r: Run = S.run, budget = r.budget ?? S.project?.budgets?.runUsd, pct = budget ? Math.min(100, (r.cost / budget) * 100) : 0;
-  const h = S.lastHarness, live = h && Date.now() - h.at < 600_000;
-  const el = (r.end ?? (r.running ? Date.now() : r.start)) - r.start;
-  set($("tb-status"), `
-    ${waiting().length ? `<span class="paused" data-hint="The run is paused until the harness answers with voice_reply (it asks over MCP). Stop (Space) ends the run.">${esc(waitFor(waiting()[0]))}${waiting().length > 1 ? ` · ${waiting().length} voices` : ""}</span>` : ""}
-    <span class="lcd" data-hint="Position bar:step of the last barrier, and pass">${esc(r.pos ?? "1:01")}<small>pass ${r.pass + 1}</small></span>
-    <span class="lcd" data-hint="Elapsed wall time of the ${r.running ? "current" : "last"} run">${fmtT(r.start ? el : 0)}</span>
-    <span class="cost" data-hint="Cost of the ${r.running ? "current" : "last"} run against the run budget">$${r.cost.toFixed(2)} / $${budget != null ? Number(budget).toFixed(2) : "—"}<span class="bar"><i class="${pct > 80 ? "hot" : ""}" style="width:${pct}%"></i></span></span>
-    <button class="errs ${S.errors.length ? "bad" : "ok"}" data-act="errors" data-k="errs" aria-expanded="${!$("errors").hidden}" data-hint="Validation errors: click for path, message and fix">${S.errors.length ? `⚠ ${S.errors.length} error${S.errors.length > 1 ? "s" : ""}` : "✓ valid"}</button>
-    <span class="harness${live ? " live" : ""}" data-hint="${h ? `Last outside edit: ${esc(h.tool ?? h.type)} ${esc(h.summary ?? "")}` : "Edits from Claude Code or any MCP client show up here"}">${h ? `⇄ ${esc(NAMES[h.source.slice(4)] ?? h.source.slice(4))} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness yet"}</span>`);
-  const e = $("errors");
-  if (!e.hidden) set(e, S.errors.length ? `<ul>${S.errors.map((x: any) => `<li><code>${esc(x.path || "/")}</code> ${esc(x.message)}<br><span class="muted">fix: ${esc(x.fix)}</span></li>`).join("")}</ul>` : `<p class="muted">No validation errors.</p>`);
-}
-const still = (e: any) => e.runId === S.run.id && waiting().some((v: any) => v.voice === e.voice);
-const chLabel = (e: any) => { const c = (S.project?.channels ?? []).find((c: any) => c.id === e.channel); return `${c?.name ?? e.channel} · ${(c?.keymap ?? []).find((k: any) => k.key === e.key)?.name ?? `key ${e.key}`}`; };
-function feed() {
-  const items = S.events.filter((e: any) => e.type === "edit" || e.type.startsWith("run.") || (e.type === "voice" && (e.status === "failed" || e.phase === "wait"))).slice(-60).reverse();
-  set($("feed"), `<h2>Activity <span class="muted">${items.length}</span></h2><div class="body"><ul class="feed">${items.map((e: any) => {
-    const t = new Date(e.at).toLocaleTimeString([], { hour12: false });
-    const what = e.tool === "undo" ? `↶ ${esc(e.summary)}` : e.type === "edit" ? `${esc(e.tool)} <span class="muted">${esc(e.summary)}</span>`
-      : e.type === "run.start" ? `Run started · ${esc(e.pattern ? `pattern ${e.pattern}` : "song")}`
-      : e.type === "run.end" ? (e.error ? `Run failed: ${esc(e.error)}` : `Run done · ${e.summary.passes} passes · ${e.summary.voicesRun} voices · $${e.summary.costUsd.toFixed(4)}${e.summary.stopped ? ` · stopped: ${esc(e.summary.stopped)}` : ""}`)
-      : e.phase === "wait" ? `${still(e) ? esc(waitFor(e)) : `Asked ${esc(who(e.source).replace("via MCP · ", ""))}`} · ${esc(chLabel(e))} <span class="muted">${esc(e.text)}</span>`
-      : `Voice failed: ${esc(e.channel)} · ${esc(e.error)}`;
-    const cls = e.type === "run.end" ? (e.error || e.summary?.stopped ? "fail" : "end") : e.phase === "wait" ? (still(e) ? "wait" : "") : e.type === "voice" ? "fail" : "";
-    return `<li class="${cls}"><header><span class="src${String(e.source).startsWith("mcp:") ? " mcp" : ""}">${esc(who(e.source))}</span><span>${t}</span></header>${what}</li>`;
-  }).join("") || `<li class="muted">Nothing yet. Edits and runs from the studio, the CLI and MCP clients land here.</li>`}</ul></div>`);
+// tempo: wheel or drag up/down previews locally; one edit (one undo step) lands when the gesture settles
+let tempoT: any;
+const setTempo = (v: number) => { S.bpm = Math.round(Math.max(10, Math.min(999, v))); paint(); clearTimeout(tempoT); tempoT = setTimeout(() => post("/api/tempo", { bpm: S.bpm }), 450); };
+function tempoDrag(ev: PointerEvent) {
+  if (ev.button !== 0) return;
+  const y0 = ev.clientY, b0 = bpm();
+  const mv = (e: PointerEvent) => setTempo(b0 + (y0 - e.clientY) / 3);
+  const up = () => { removeEventListener("pointermove", mv); removeEventListener("pointerup", up); };
+  addEventListener("pointermove", mv); addEventListener("pointerup", up);
 }
 
-/** innerHTML swap that keeps keyboard focus on the element with the same data-k. */
-export function set(el: HTMLElement, html: string) {
-  const a = document.activeElement as HTMLElement | null, k = el.contains(a) ? a?.dataset.k : null;
-  el.innerHTML = html;
-  if (k) (el.querySelector(`[data-k="${CSS.escape(k)}"]`) as HTMLElement | null)?.focus();
+function Toolbar() {
+  const r: Run = S.run, pats = S.project?.patterns ?? [], on = playing(), wt = waiting();
+  const budget = r.budget ?? S.project?.budgets?.runUsd, pct = budget ? Math.min(100, (r.cost / budget) * 100) : 0;
+  const h = S.lastHarness, live = h && Date.now() - h.at < 600_000;
+  return html`<header id="toolbar" aria-label="Transport and status">
+    <div class="brand" aria-hidden="true">AgentLoops</div>
+    <div class="grp">
+      <button class=${`tp play${on ? " on" : ""}`} onClick=${play} aria-pressed=${on} aria-label=${on ? "Stop (Space)" : "Play (Space)"}
+        data-hint=${on ? "Stop (Space): ends the current run and the loop. The take is still saved." : S.mode === "pat" ? "Play the pattern (Space). It repeats until you stop it; edits land on the next repeat." : "Play the song once (Space)"}>${on ? "■" : "▶"}</button>
+      <span class="seg" role="group" aria-label="Play mode (L)">
+        <button aria-pressed=${S.mode === "pat"} onClick=${() => { S.mode = "pat"; paint(); }} data-hint="Pattern mode: loop the selected pattern until Stop (L)">PAT</button><button aria-pressed=${S.mode === "song"} onClick=${() => { S.mode = "song"; paint(); }} data-hint="Song mode: play the arrangement in the Playlist once (L)">SONG</button>
+      </span>
+      <select aria-label="Pattern" value=${curPattern()?.id} onChange=${(e: any) => { S.pattern = e.target.value; paint(); }} data-hint="Selected pattern: shown in the rack and piano roll, played in PAT mode, placed by clicking the Playlist">
+        ${pats.map((p: any) => html`<option value=${p.id}>${p.name ?? p.id}</option>`)}</select>
+    </div>
+    <div class="lcd" data-hint="Song position bar:step:tick, the repeat (PAT loop) and pass, and the elapsed time of the run">
+      <span class="big" id="lcd-pos">1:01:00</span>
+      <span class="meta"><span>${r.repeat ? `repeat ${r.repeat}` : r.id && !r.pattern ? "song" : "—"}</span><span>pass ${r.pass + 1}</span></span>
+      <span class="big dim" id="lcd-time">00:00.0</span>
+    </div>
+    <div class="lcd tempo" tabindex="0" role="spinbutton" aria-label="Tempo, BPM" aria-valuenow=${bpm()} aria-valuemin="10" aria-valuemax="999"
+      onWheel=${(e: WheelEvent) => { e.preventDefault(); setTempo(bpm() + (e.deltaY < 0 ? 1 : -1) * (e.shiftKey ? 10 : 1)); }} onPointerDown=${tempoDrag}
+      onKeyDown=${(e: KeyboardEvent) => { const d = ({ ArrowUp: 1, ArrowDown: -1 } as any)[e.key]; if (d) { e.preventDefault(); setTempo(bpm() + d * (e.shiftKey ? 10 : 1)); } }}
+      data-hint="Tempo: scroll or drag up/down (Shift: by 10). A speed limit for Play: fast agents play at tempo, slow ones hold the playhead.">
+      <span class="big">${bpm().toFixed(0)}</span><span class="meta"><span>BPM</span><span>${S.bpm != null ? "…" : "tempo"}</span></span></div>
+    <div class="grp snd">
+      <button class=${`spk${sound.on ? " on" : ""}`} aria-pressed=${sound.on} aria-label="Sound" onClick=${() => { setOn(!sound.on); paint(); }}
+        onWheel=${(e: WheelEvent) => { e.preventDefault(); setVol(sound.vol + (e.deltaY < 0 ? 0.05 : -0.05)); paint(); }}
+        data-hint=${`Sound ${sound.on ? "on" : "off"}, volume ${Math.round(sound.vol * 100)}%. Click to toggle, scroll to change the volume. Each voice is a tone at its note's key while the agent runs; Master frames chime, errors blip.`}>${sound.on ? "♪" : "♪̸"}<small>${Math.round(sound.vol * 100)}</small></button>
+      <button class=${`metro${sound.metro ? " on" : ""}`} aria-pressed=${sound.metro} aria-label="Metronome" onClick=${() => { setMetro(!sound.metro); paint(); }} data-hint="Metronome: a click on each beat while playing, accent on the bar">♩</button>
+    </div>
+    <div class="grp">
+      <button onClick=${() => post("/api/undo")} disabled=${!S.project} data-hint="Undo the latest edit, whoever made it: you, Claude Code or another client (Ctrl+Z)">↶</button>
+      <label class="tog" data-hint="Song mode: replay unchanged voices from earlier takes instead of running them again (PAT loops always do)"><input type="checkbox" checked=${S.cache} onChange=${(e: any) => { S.cache = e.target.checked; }}/>Cache</label>
+    </div>
+    <div class="cpu" role="meter" aria-label="Run cost against budget" aria-valuenow=${r.cost} aria-valuemin="0" aria-valuemax=${budget ?? 0}
+      data-hint=${`Cost of the ${r.running ? "current" : "last"} run: $${r.cost.toFixed(4)} of the $${budget ?? "—"} run budget`}>
+      <span class="bars">${Array.from({ length: 10 }, (_, i) => html`<i class=${i * 10 < pct ? (i >= 8 ? "hot" : "lit") : ""}></i>`)}</span>
+      <span class="num">$${r.cost.toFixed(2)}<small>/ ${budget != null ? `$${Number(budget).toFixed(2)}` : "—"}</small></span></div>
+    <button class=${`errs ${S.errors.length ? "bad" : "ok"}`} onClick=${() => { S.showErrors = !S.showErrors; paint(); }} aria-expanded=${S.showErrors} data-hint="Validation errors: click for path, message and fix">${S.errors.length ? `⚠ ${S.errors.length}` : "✓"}</button>
+    <span class=${`harness${live ? " live" : ""}`} data-hint=${h ? `Last outside edit: ${h.tool ?? h.type} ${h.summary ?? ""}` : "Edits and runs from Claude Code or any MCP client show up here"}>${h ? `⇄ ${NAMES[h.source.slice(4)] ?? h.source.slice(4)} · ${h.type === "edit" ? "edit" : "run"} · ${ago(h.at)}` : "⇄ no harness"}</span>
+    ${wt.length ? html`<span class="paused" role="status" data-hint="The run is paused until the harness answers with voice_reply. Stop (Space) ends it.">${waitFor(wt[0])}${wt.length > 1 ? ` · ${wt.length} voices` : ""}</span>` : null}
+    <div id="hint" role="status" aria-live="polite">${hintText}</div>
+  </header>`;
 }
+
+function Errors() {
+  if (!S.showErrors) return null;
+  return html`<div id="errors" role="dialog" aria-label="Validation errors">${S.errors.length ? html`<ul>${S.errors.map((x: any) => html`<li><code>${x.path || "/"}</code> ${x.message}<br/><span class="muted">fix: ${x.fix}</span></li>`)}</ul>` : html`<p class="muted">No validation errors.</p>`}</div>`;
+}
+
+function App() {
+  const pat = curPattern(), ch = selChannel(), mb = S.monitorBus;
+  return html`${Toolbar()}${Errors()}
+    <main id="desk" onContextMenu=${(e: Event) => (e.target as HTMLElement).closest(".nocm") && e.preventDefault()}>
+      ${S.wins.playlist.open ? Playlist() : html`<p class="desk-empty">F5 shows the Playlist.</p>`}
+      <${Win} id="rack" sub=${`${pat?.name ?? pat?.id ?? "no pattern"} · ${pat?.lengthSteps ?? 16} steps`}>${Rack()}<//>
+      <${Win} id="piano" sub=${`${chName(ch ?? "")} · ${pat?.name ?? ""}`}>${Piano()}<//>
+      <${Win} id="mixer" sub=${`${(S.project?.mixer?.buses?.length ?? 0) + 1} buses · monitoring ${mb}`}>${Mixer()}<//>
+      <${Win} id="tracer" sub=${S.latest ? `take ${S.latest.run.id}` : ""}>${Tracer()}<//>
+      <${Win} id="monitor" sub=${S.monTab === "live" ? "live, this pass" : S.monTab === "bus" ? `bus ${mb}` : "Master"}>${Monitor()}<//>
+    </main>`;
+}
+
 let hintText = "";
-export const setHint = (t: string) => { if (t !== hintText) $("hint").textContent = hintText = t; };
-const DEFAULT_HINT = "Space play/stop · Ctrl+Z undo · L pattern/song · F5 playlist · F6 rack · F7 piano roll · F9 mixer · F10 tracer";
+const DEFAULT_HINT = "Space play/stop · L pattern/song · Ctrl+Z undo · F5 playlist · F6 rack · F7 piano roll · F9 mixer · F10 tracer · F11 monitor";
+export const setHint = (t: string) => { if (t !== hintText) { hintText = t; paint(); } };
 
 let queued = false;
+const root = document.getElementById("app")!;
 export function paint() {
   if (queued) return; queued = true;
-  requestAnimationFrame(() => {
-    queued = false;
-    if (!S.project) return;
-    toolbarCtl(); toolbarStatus(); feed(); playlist(); rack(); piano(); mixer(); tracer(); reportView();
-    if (S.run.running) animate();
-  });
+  requestAnimationFrame(() => { queued = false; if (S.project) { render(App(), root); reportView(); } });
 }
 
+// ---- the playhead: interpolated from the last barrier's wall clock and the tempo, clamped at the next barrier (a stall) ----
+let ptsMemo: any = {}, lastBeat = -1;
+function points(r: Run) {
+  if (ptsMemo.p === S.project && ptsMemo.id === r.id) return ptsMemo.v;
+  const ps: number[] = [];
+  const add = (pat: any, s: number, len: number) => {
+    if (!pat) return;
+    for (const st of Object.values<number[]>(pat.steps ?? {})) st.forEach((v, i) => v && i * STEP < len && ps.push(s + i * STEP));
+    for (const ns of Object.values<any[]>(pat.notes ?? {})) for (const n of ns) if (pos(n.start) < len) ps.push(s + pos(n.start));
+    ps.push(s + len);
+  };
+  if (r.pattern) { const pat = (S.project.patterns ?? []).find((p: any) => p.id === r.pattern); add(pat, 0, patLen(pat)); }
+  else for (const c of clipsOf()) add(c.p, c.s, c.l);
+  ptsMemo = { p: S.project, id: r.id, v: ps.sort((a, b) => a - b) };
+  return ptsMemo.v;
+}
+export function head() {
+  const r: Run = S.run;
+  if (!r.id) return { t: 0, stalled: false };
+  if (!r.running || !r.pace) return { t: r.tick, stalled: false };
+  const mpt = 60000 / r.pace / 96, t = r.tick + (Date.now() - r.at) / mpt, next = points(r).find((x: number) => x > r.tick) ?? r.tick;
+  return { t: Math.min(t, next), stalled: t > next + 150 / mpt };
+}
+function tick() {
+  requestAnimationFrame(tick);
+  if (!S.project) return;
+  const r: Run = S.run, { t, stalled } = head(), { pat, rel } = relTick(r, t), cp = curPattern(), de = document.documentElement;
+  de.style.setProperty("--ph", String(t));
+  de.style.setProperty("--php", String(rel));
+  document.body.classList.toggle("running", r.running);
+  document.body.classList.toggle("stalled", stalled);
+  document.body.classList.toggle("ph-here", !!r.id && pat === cp?.id);
+  const p = document.getElementById("lcd-pos"), tm = document.getElementById("lcd-time");
+  if (p) p.textContent = lcdPos(t);
+  if (tm) tm.textContent = fmtT(r.start ? (r.end ?? (r.running ? Date.now() : r.start)) - r.start : 0);
+  const step = r.running && pat === cp?.id ? Math.floor(rel / STEP) : -1;
+  const beat = r.running && r.pace ? Math.floor(t / 96) : -1; // metronome: a click per beat while the head moves, accent on the bar
+  if (beat !== lastBeat) { if (beat >= 0 && !stalled) click(beat % 4 === 0); lastBeat = beat; }
+  document.querySelectorAll<HTMLElement>(".leds i").forEach((el, i) => el.classList.toggle("on", i === step));
+  const now = Date.now(); // hits (a voice starting, a frame reaching a bus) fade out over 900 ms; JS-driven so every frame and screenshot agrees
+  document.querySelectorAll<HTMLElement>(".hit").forEach((el) => { el.style.opacity = String(Math.max(0, 1 - (now - +el.dataset.t!) / 900)); });
+  const busy = stalled ? [...new Set([...r.voices.values()].filter((v: any) => v.status === "running" || v.status === "waiting").map((v: any) => chName(v.channel)))] : [];
+  document.querySelectorAll<HTMLElement>(".ph-tag").forEach((el) => { el.textContent = busy.length ? `⏳ ${busy.join(", ")}…` : ""; });
+}
+requestAnimationFrame(tick);
+
 // ---- shared with the agent: studio_view reads this, studio_focus moves it ----
-const PANEL_ID: Record<string, string> = { playlist: "playlist", rack: "rack", pianoroll: "piano", mixer: "mixer", tracer: "tracer" };
 let lastView = "";
 function reportView() {
-  const id = Object.keys(PANEL_ID).find((k) => PANEL_ID[k] === S.panel) ?? null;
-  const v = { panel: id, pattern: curPattern()?.id ?? null, channel: selChannel() ?? null, voice: S.voice, selection: S.voice != null ? `voice:${S.voice}` : S.channel ? `channel:${S.channel}` : S.pattern ? `pattern:${S.pattern}` : null };
+  const v = { panel: WINS[S.panel]?.panel ?? null, pattern: curPattern()?.id ?? null, channel: selChannel() ?? null, voice: S.voice,
+    selection: S.voice != null ? `voice:${S.voice}` : S.channel ? `channel:${S.channel}` : S.pattern ? `pattern:${S.pattern}` : null,
+    windows: Object.keys(WINS).filter((k) => S.wins[k].open).map((k) => WINS[k].panel) };
   const j = JSON.stringify(v);
   if (j === lastView) return;
   lastView = j; fetch("/api/view", { method: "POST", headers: { "content-type": "application/json" }, body: j }).catch(() => {});
@@ -178,56 +344,43 @@ function showFocus(f: any) {
   if (f.pattern) S.pattern = f.pattern;
   if (f.channel) S.channel = f.channel;
   if (f.voice != null) S.voice = f.voice;
+  if (f.bus) { S.monitorBus = f.bus; S.monTab = f.bus === "master" ? "master" : "bus"; }
   const panel = f.panel ?? (f.voice != null ? "tracer" : f.bus ? "mixer" : f.channel ? "pianoroll" : f.pattern ? "rack" : null);
+  const id = Object.keys(WINS).find((k) => WINS[k].panel === panel);
+  if (id) toggleWin(id, true);
   const ids = [f.channel && `ch:${f.channel}`, f.pattern && `pat:${f.pattern}`, f.bus && `bus:${f.bus}`, f.voice != null && `voice:${f.voice}`].filter(Boolean) as string[];
-  for (const id of ids) S.flash.add(id);
+  for (const x of ids) S.flash.add(x);
   paint();
   requestAnimationFrame(() => requestAnimationFrame(() => { // after the repaint
-    const el = panel ? $(PANEL_ID[panel]) : null;
-    el?.classList.add("flash"); el?.focus({ preventScroll: true }); el?.scrollIntoView({ block: "nearest" });
+    const el = id ? document.getElementById(id) : null;
+    el?.classList.add("flash"); el?.focus({ preventScroll: true });
     if (f.voice != null) document.querySelector(`[data-k="v:${f.voice}"]`)?.scrollIntoView({ block: "nearest" });
-    setTimeout(() => { for (const id of ids) S.flash.delete(id); el?.classList.remove("flash"); paint(); }, 1500);
+    setTimeout(() => { for (const x of ids) S.flash.delete(x); el?.classList.remove("flash"); paint(); }, 1500);
   }));
 }
-let anim = 0;
-function animate() { cancelAnimationFrame(anim); const f = () => { drawPiano(); if (S.run.running) anim = requestAnimationFrame(f); }; anim = requestAnimationFrame(f); }
 
 // ---- wiring ----
-document.addEventListener("click", (ev) => {
-  const t = (ev.target as HTMLElement).closest<HTMLElement>("[data-act]");
-  if (!t) return;
-  const a = t.dataset.act;
-  if (a === "play") play();
-  else if (a === "mode") { S.mode = t.dataset.v; paint(); }
-  else if (a === "undo") post("/api/undo");
-  else if (a === "errors") { $("errors").hidden = !$("errors").hidden; paint(); }
-});
-document.addEventListener("change", (ev) => {
-  const t = ev.target as HTMLInputElement;
-  if (t.dataset.act === "pattern") { S.pattern = t.value; paint(); }
-  if (t.dataset.act === "cache") S.cache = t.checked;
-});
 const hintOf = (ev: Event) => setHint((ev.target as HTMLElement).closest?.<HTMLElement>("[data-hint]")?.dataset.hint ?? DEFAULT_HINT);
 document.addEventListener("mouseover", hintOf);
 document.addEventListener("focusin", hintOf);
-document.addEventListener("focusin", (ev) => { const p = (ev.target as HTMLElement).closest?.(".panel"); if (p) { S.panel = p.id; reportView(); } });
-const KEYS: Record<string, string> = { F5: "playlist", F6: "rack", F7: "piano", F9: "mixer", F10: "tracer" };
 document.addEventListener("keydown", (ev) => {
   const t = ev.target as HTMLElement;
+  if (KEYS[ev.key] && !ev.ctrlKey && !ev.altKey) { ev.preventDefault(); return toggleWin(KEYS[ev.key]); }
   if (t.closest("input, select, textarea, [contenteditable]")) return;
   if ((ev.ctrlKey || ev.metaKey) && !ev.shiftKey && !ev.altKey && ev.key.toLowerCase() === "z") { ev.preventDefault(); return void post("/api/undo"); }
   if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
-  if (KEYS[ev.key]) { ev.preventDefault(); $(KEYS[ev.key]).focus(); }
-  else if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
+  if (ev.key === " " && !t.closest("button")) { ev.preventDefault(); play(); }
   else if (ev.key === "l" || ev.key === "L") { S.mode = S.mode === "pat" ? "song" : "pat"; paint(); }
-  else if (ev.key === "Escape") $("errors").hidden = true, paint();
+  else if (ev.key === "Escape") { S.showErrors = false; paint(); }
 });
-setInterval(() => { if (S.project) toolbarStatus(); }, 1000);
+setInterval(() => S.project && paint(), 1000); // "3s ago" labels
 
-const boot = JSON.parse($("boot")?.textContent ?? "null") ?? await (await fetch("/api/state")).json();
+const boot = JSON.parse(document.getElementById("boot")?.textContent ?? "null") ?? await (await fetch("/api/state")).json();
 setState(boot, false);
+S.wins = loadWins(); zTop = Math.max(...Object.values<any>(S.wins).map((w) => w.z ?? 0));
 for (const e of boot.events ?? []) onEvent(e, false);
-setHint(DEFAULT_HINT);
+if (S.run.running && !boot.running) S.run.running = false; // the log ended mid-run (studio restarted)
+hintText = DEFAULT_HINT;
 paint();
 const es = new EventSource("/api/events");
 es.addEventListener("state", (m) => { setState(JSON.parse(m.data), true); paint(); });

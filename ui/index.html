@@ -5,19 +5,14 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>AgentLoops Studio</title>
 <link rel="stylesheet" href="/ui/style.css">
+<script type="importmap">{ "imports": {
+  "preact": "/vendor/preact/dist/preact.module.js",
+  "preact/hooks": "/vendor/preact/hooks/dist/hooks.module.js",
+  "htm": "/vendor/htm/dist/htm.module.js"
+} }</script>
 </head>
 <body>
-<header id="toolbar" aria-label="Transport and status"><div id="tb-ctl" role="toolbar" aria-label="Transport"></div><div id="tb-status"></div></header>
-<div id="hint" role="status" aria-live="polite"></div>
-<main id="desk">
-  <section id="playlist" class="panel" tabindex="-1" aria-label="Playlist, F5"></section>
-  <aside id="feed" class="panel" tabindex="-1" aria-label="Activity"></aside>
-  <section id="rack" class="panel" tabindex="-1" aria-label="Channel rack, F6"></section>
-  <section id="piano" class="panel" tabindex="-1" aria-label="Piano roll, F7"></section>
-  <section id="mixer" class="panel" tabindex="-1" aria-label="Mixer, F9"></section>
-  <section id="tracer" class="panel" tabindex="-1" aria-label="Tracer, F10"></section>
-</main>
-<div id="errors" role="dialog" aria-label="Validation errors" hidden></div>
+<div id="app"></div>
 <!--boot-->
 <script type="module" src="/ui/main.ts"></script>
 </body>

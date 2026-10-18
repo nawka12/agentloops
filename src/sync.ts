@@ -45,13 +45,14 @@ export function findStudio(file: string): { port: number; token: string; pid: nu
 }
 
 /** render() that logs run.start, every engine event, and run.end (with the result summary) to the event log. */
-export async function loggedRender(proj: { p: any; dir: string }, opts: RunOpts, source: string) {
+/** `extra` (e.g. the studio's PAT `repeat`) rides on run.start and run.end. */
+export async function loggedRender(proj: { p: any; dir: string }, opts: RunOpts, source: string, extra: object = {}) {
   const runId = opts.runId ?? randomUUID().slice(0, 8);
   const log = (e: object) => { try { appendEvent(proj.dir, { ...e, runId, source }); } catch {} };
-  log({ type: "run.start", pattern: opts.pattern, arrangement: opts.arrangement, budget: opts.budget ?? proj.p.budgets?.runUsd });
+  log({ type: "run.start", pattern: opts.pattern, arrangement: opts.arrangement, budget: opts.budget ?? proj.p.budgets?.runUsd, pace: opts.pace, ...extra });
   try {
     const r = await render(proj, { ...opts, runId, onEvent: (e) => { log(e); opts.onEvent?.(e); } });
-    log({ type: "run.end", summary: { takeId: r.takeId, passes: r.passes, costUsd: r.costUsd, stopped: r.stopped, voicesRun: r.voicesRun, cacheHits: r.cacheHits, skipped: r.skipped, buses: r.buses } });
+    log({ type: "run.end", ...extra, summary: { takeId: r.takeId, passes: r.passes, costUsd: r.costUsd, stopped: r.stopped, voicesRun: r.voicesRun, cacheHits: r.cacheHits, skipped: r.skipped, buses: r.buses } });
     return r;
-  } catch (e: any) { log({ type: "run.end", error: e.message }); throw e; }
+  } catch (e: any) { log({ type: "run.end", ...extra, error: e.message }); throw e; }
 }

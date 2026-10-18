@@ -23,7 +23,7 @@ export function evalBool(src: string, ctx: Record<string, any>): boolean {
     const { bus, loop, ...rest } = ctx;
     curBus = bus ?? (() => null);
     // CEL ints are BigInt in this lib; plain JS numbers are doubles and break `%`.
-    const lp = loop && { ...loop, index: BigInt(loop.index), max: loop.max == null ? 0n : BigInt(loop.max) };
+    const lp = loop && { ...loop, index: BigInt(loop.index), pass: BigInt(loop.index + 1), max: loop.max == null ? 0n : BigInt(loop.max) };
     return env.evaluate(fix(src), { ...rest, lp }) === true;
   } catch { return false; }
 }

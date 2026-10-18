@@ -68,12 +68,12 @@ test("Studio MCP round trip: build P1 from scratch with tools, run it, read the 
     assert.equal(run.status, "done");
     assert.equal(run.passes, 3);
     assert.equal(run.master.length, 1);
-    assert.match(run.master[0].text, /^Revision \(pass 2\)/);
+    assert.match(run.master[0].text, /^Revision \(pass 3\)/);
     assert.ok(progress >= 3, `progress notifications: ${progress}`);
     const take = await call("take_get", { id: run.runId });
     assert.equal(take.passes, 3);
     assert.equal(take.voices.length, 6);
-    assert.match(take.master[0].text, /^Revision \(pass 2\)/);
+    assert.match(take.master[0].text, /^Revision \(pass 3\)/);
     assert.equal((await call("take_get", { id: run.runId, frames: true, channel: "critic" })).length, 3);
     assert.equal((await call("take_list")).length, 1);
     const again = await call("run_start", { input: { topic: "CRDTs" }, cache: "prefer" });
@@ -210,11 +210,11 @@ test("validate: unknown tool servers and bad references are errors; the old 'not
   assert.ok(!validate(base(ch(["web"]), srv)).some((e) => /not supported yet/.test(e.message)));
 });
 
-test("the manual's example project is valid and renders to the approved pass-2 draft", async () => {
+test("the manual's example project is valid and renders to the approved pass-3 draft", async () => {
   const json = /```json\n([\s\S]*?)\n```/.exec(MANUAL)![1];
   const p = JSON.parse(json);
   assert.deepEqual(validate(p), []);
   const r = await render({ p, dir: tmp() }, { input: { topic: "CRDTs" } });
   assert.equal(r.passes, 3);
-  assert.match(r.master[0].text, /^Revision \(pass 2\)/);
+  assert.match(r.master[0].text, /^Revision \(pass 3\)/);
 });

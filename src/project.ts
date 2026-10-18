@@ -5,7 +5,7 @@ import { AsyncFunction } from "./generators.ts";
 
 export const BAR = 384; // ticks per bar
 export const STEP = 24; // ticks per step
-// ponytail: `clock` is ignored; 4 beats x 4 steps x 96 ppq is hardwired. Derive from project.clock if other grids are needed.
+// ponytail: only `clock.bpm` is read (the studio's playback pace); 4 beats x 4 steps x 96 ppq is hardwired. Derive from project.clock if other grids are needed.
 
 /** docs/manual.md is the single source for the MCP resource, the Claude Code skill and AGENTS.md. */
 export const MANUAL = readFileSync(new URL("../docs/manual.md", import.meta.url), "utf8");
@@ -54,6 +54,7 @@ export function validate(p: any): Err[] {
   };
   if (p.format != null && p.format !== "agentloops/1") err("/format", `Unknown format ${JSON.stringify(p.format)}`, 'Set "format": "agentloops/1"');
   const channels: any[] = p.channels ?? [], buses: any[] = p.mixer?.buses ?? [], pats: any[] = p.patterns ?? [], arrs: any[] = p.arrangements ?? [];
+  if (p.clock?.bpm != null && !(typeof p.clock.bpm === "number" && p.clock.bpm >= 10 && p.clock.bpm <= 999)) err("/clock/bpm", "bpm must be a number from 10 to 999", "Use e.g. 120");
   if (p.budgets?.runUsd != null && !(p.budgets.runUsd > 0)) err("/budgets/runUsd", "runUsd must be a positive number", "Use e.g. 5");
 
   // project-level tool servers (MCP over stdio); channels allow-list them by name
@@ -113,6 +114,7 @@ export function validate(p: any): Err[] {
       if (inp.select != null && !["final", "all"].includes(inp.select)) err(at("inputs", j, "select"), `Bad select ${JSON.stringify(inp.select)}`, 'Use "final" or "all"');
     });
     if (c.output != null && !busIds.has(c.output)) err(at("output"), `Unknown output bus '${c.output}'`, `Use one of: ${[...busIds].join(", ")} (or omit for master)`);
+    for (const k of ["mute", "solo"]) if (c[k] != null && typeof c[k] !== "boolean") err(at(k), `${k} must be true or false`, `Use "${k}": true, or remove it`);
     if (c.polyphony != null && !(Number.isInteger(c.polyphony) && c.polyphony > 0)) err(at("polyphony"), "polyphony must be a positive integer", "Use e.g. 4");
     if (c.retries != null && !(Number.isInteger(c.retries) && c.retries >= 0)) err(at("retries"), "retries must be an integer >= 0", "Use e.g. 1");
     if (c.onFail != null && !["stop", "skip"].includes(c.onFail)) err(at("onFail"), `onFail ${JSON.stringify(c.onFail)} is not supported yet`, 'Use "stop" or "skip"');

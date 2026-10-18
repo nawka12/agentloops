@@ -19,7 +19,7 @@
       "generator": {
         "plugin": "script",
         "params": {
-          "code": "const n = ctx.loop.index; const topic = ctx.trigger.payload?.topic ?? 'CRDTs'; if (n === 0) return `Draft (pass 0) about ${topic}.`; return `Revision (pass ${n}) about ${topic}, addressing: ${ctx.inputs.review.json?.notes}`;"
+          "code": "const p = ctx.loop.pass; const topic = ctx.trigger.payload?.topic ?? 'CRDTs'; if (p === 1) return `Draft (pass 1) about ${topic}.`; return `Revision (pass ${p}) about ${topic}, addressing: ${ctx.inputs.review.json?.notes}`;"
         }
       },
       "keymap": [
@@ -55,7 +55,7 @@
       "generator": {
         "plugin": "script",
         "params": {
-          "code": "const n = ctx.loop.index; const approved = n >= 2; const json = { approved, notes: approved ? 'Approved.' : `Needs more detail (round ${n}).` }; return { text: json.notes, json };"
+          "code": "const n = ctx.loop.index; const approved = n >= 2; const json = { approved, notes: approved ? 'Approved.' : `Needs more detail (round ${ctx.loop.pass}).` }; return { text: json.notes, json };"
         }
       },
       "keymap": [

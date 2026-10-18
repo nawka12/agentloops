@@ -118,7 +118,7 @@ test("POST /api/run streams run events ending in run.end with 3 passes", async (
     assert.equal(types[0], "run.start");
     assert.ok(types.includes("barrier") && types.includes("pass") && types.includes("voice"));
     const v = ev.seen.find((e) => e.data.type === "voice" && e.data.phase === "end").data;
-    assert.equal(v.bus, "draft"); assert.equal(v.frames, 1); assert.match(v.text, /Draft \(pass 0\)/);
+    assert.equal(v.bus, "draft"); assert.equal(v.frames, 1); assert.match(v.text, /Draft \(pass 1\)/);
     const st = await ev.next((e) => e.type === "state" && e.data.latest?.run.id === end.data.runId);
     assert.equal(st.data.latest.voices.length, 6);
     const take = await (await fetch(s.url + `api/take/${end.data.runId}`)).json() as any;

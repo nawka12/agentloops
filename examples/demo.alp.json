@@ -1,0 +1,289 @@
+{
+  "format": "agentloops/1",
+  "name": "Article workshop",
+  "seed": 7,
+  "clock": {
+    "mode": "barrier",
+    "beatsPerBar": 4,
+    "stepsPerBeat": 4,
+    "ppq": 96,
+    "bpm": 100
+  },
+  "budgets": {
+    "runUsd": 1
+  },
+  "channels": [
+    {
+      "id": "writer",
+      "name": "Writer",
+      "color": "#e8a33d",
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "await new Promise((r) => setTimeout(r, 600 + 500 * ctx.loop.index)); // thinking time grows each pass\nconst topic = ctx.trigger.payload?.topic ?? 'Why cats sleep so much';\nif (ctx.loop.pass === 1) return `# ${topic}\\n\\nCats sleep twelve to sixteen hours a day, and it is not laziness.`;\nconst article = ctx.inputs.draft.text, add = ctx.inputs.review.json?.missing?.[0];\nconst parts = {\n  'an example': 'For example, a house cat that dozes all afternoon is saving energy for a burst of play at dusk, the hour its wild ancestors hunted.',\n  'a conclusion': 'In short, all that sleep is a hunter keeping its batteries full, even on a sofa.',\n};\nreturn parts[add] ? `${article}\\n\\n${parts[add]}` : article;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 60,
+          "name": "Draft",
+          "template": "Write a short article: {{trigger.payload.topic}}"
+        },
+        {
+          "key": 64,
+          "name": "Revise",
+          "template": "Pass {{loop.pass}}: add what the review asks for.\n{{inputs.review}}"
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "review",
+          "window": "last",
+          "select": "final",
+          "as": "review"
+        },
+        {
+          "bus": "draft",
+          "window": "last",
+          "select": "final",
+          "as": "draft"
+        }
+      ],
+      "context": "fresh",
+      "output": "draft",
+      "polyphony": 1
+    },
+    {
+      "id": "critic",
+      "name": "Critic",
+      "color": "#5aa9e6",
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "await new Promise((r) => setTimeout(r, 900 + 400 * ctx.loop.index));\nconst t = ctx.inputs.draft.text, need = ['an example', 'a conclusion'];\nconst found = { 'an example': /For example/.test(t), 'a conclusion': /In short/.test(t) };\nconst missing = need.filter((s) => !found[s]), approved = missing.length === 0;\nconst notes = approved ? `Approved on pass ${ctx.loop.pass}: title, opening, example and conclusion are all there.` : `Pass ${ctx.loop.pass}: add ${missing[0]} next.`;\nreturn { text: notes, json: { approved, notes, missing } };"
+        }
+      },
+      "keymap": [
+        {
+          "key": 67,
+          "name": "Review",
+          "template": "Check the article has an example, then a conclusion:\n{{inputs.draft}}",
+          "schema": {
+            "type": "object",
+            "required": [
+              "approved",
+              "notes",
+              "missing"
+            ],
+            "properties": {
+              "approved": {
+                "type": "boolean"
+              },
+              "notes": {
+                "type": "string"
+              },
+              "missing": {
+                "type": "array"
+              }
+            }
+          }
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "draft",
+          "window": "last",
+          "select": "final",
+          "as": "draft"
+        }
+      ],
+      "context": "fresh",
+      "output": "review",
+      "polyphony": 1
+    },
+    {
+      "id": "editor",
+      "name": "Editor",
+      "color": "#9bd16a",
+      "generator": {
+        "plugin": "script",
+        "params": {
+          "code": "await new Promise((r) => setTimeout(r, 600));\nconst [title, ...paras] = ctx.inputs.article.text.split('\\n\\n');\nconst first = (p) => { const s = p.replace(/^(For example|In short), /, '').split(/(?<=[.!?]) /)[0]; return s[0].toUpperCase() + s.slice(1); };\nconst bullets = paras.map((p) => '• ' + first(p)).join('\\n');\nreturn `${title.replace(/^# /, '').toUpperCase()}\\n\\n${paras.join('\\n\\n')}\\n\\nIn brief:\\n${bullets}`;"
+        }
+      },
+      "keymap": [
+        {
+          "key": 72,
+          "name": "Polish",
+          "template": "Format the approved article for publishing:\n{{inputs.article}}"
+        }
+      ],
+      "inputs": [
+        {
+          "bus": "final",
+          "window": "last",
+          "select": "final",
+          "as": "article"
+        }
+      ],
+      "context": "fresh",
+      "output": "master",
+      "polyphony": 1
+    }
+  ],
+  "patterns": [
+    {
+      "id": "workshop",
+      "name": "Workshop",
+      "lengthSteps": 16,
+      "loop": {
+        "max": 4,
+        "until": "bus('review').last.json.approved"
+      },
+      "notes": {
+        "writer": [
+          {
+            "start": "1:01",
+            "len": 96,
+            "key": 60,
+            "when": "loop.index == 0"
+          },
+          {
+            "start": "1:01",
+            "len": 96,
+            "key": 64,
+            "when": "loop.index > 0"
+          }
+        ],
+        "critic": [
+          {
+            "start": "1:09",
+            "len": 96,
+            "key": 67
+          }
+        ]
+      }
+    },
+    {
+      "id": "editor",
+      "name": "Editor",
+      "lengthSteps": 16,
+      "notes": {
+        "editor": [
+          {
+            "start": "1:01",
+            "len": 192,
+            "key": 72
+          }
+        ]
+      }
+    }
+  ],
+  "arrangements": [
+    {
+      "id": "main",
+      "name": "Main",
+      "tracks": [
+        {
+          "name": "Workshop"
+        },
+        {
+          "name": "Editor"
+        }
+      ],
+      "clips": [
+        {
+          "type": "pattern",
+          "ref": "workshop",
+          "track": 0,
+          "start": "1:01"
+        },
+        {
+          "type": "pattern",
+          "ref": "editor",
+          "track": 1,
+          "start": "2:01"
+        }
+      ]
+    }
+  ],
+  "mixer": {
+    "buses": [
+      {
+        "id": "draft",
+        "name": "Draft",
+        "slots": [],
+        "sends": [
+          {
+            "to": "final",
+            "mode": "final"
+          }
+        ],
+        "join": "aligned"
+      },
+      {
+        "id": "review",
+        "name": "Review",
+        "slots": [
+          {
+            "plugin": "fx.validator",
+            "params": {
+              "onFail": "retry",
+              "schema": {
+                "type": "object",
+                "required": [
+                  "approved",
+                  "notes",
+                  "missing"
+                ],
+                "properties": {
+                  "approved": {
+                    "type": "boolean"
+                  },
+                  "notes": {
+                    "type": "string"
+                  },
+                  "missing": {
+                    "type": "array"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "sends": [
+          {
+            "to": "final",
+            "mode": "sidechain"
+          }
+        ]
+      },
+      {
+        "id": "final",
+        "name": "Final",
+        "slots": [
+          {
+            "plugin": "fx.gate",
+            "params": {
+              "condition": "side.last.json.approved",
+              "hold": "pass"
+            }
+          }
+        ],
+        "sends": [
+          {
+            "to": "master",
+            "mode": "final"
+          }
+        ]
+      }
+    ],
+    "master": {
+      "targets": [
+        {
+          "type": "return"
+        }
+      ]
+    }
+  }
+}

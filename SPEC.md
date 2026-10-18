@@ -175,13 +175,15 @@ Positions express **order**, not duration. The rule:
 
 The transport shows the logical position (`3:09:00`) and the elapsed wall time. After a run, the **Actual timing** overlay stretches each clip to its real duration as a Gantt view.
 
+**Playback pace.** Positions express order, but a studio needs to *feel* like it's playing. So studio Play treats the tempo (`clock.bpm`, default 120) as a **speed limit**: a barrier at tick *t* releases no earlier than `start + t × msPerTick`. Fast agents (scripts, cached voices) play at tempo, and the playhead sweeps. Slow agents hold the playhead, and it visibly stalls on the notes it's waiting for. `render`, `serve` and plain `run_start` run unpaced. A harness passes `pace: "project"` when the user is watching.
+
 #### Clocked mode
 
 Tempo maps bars to wall time. For example, "1 bar = 1 h" or a conventional BPM. Notes start at their scheduled wall time, and a note's length is its **deadline**. A voice that overruns is flagged red and handled by the channel's **late policy** (`queue`, `skip` or `cancel`). Use clocked mode for monitoring loops and nightly jobs (P3). A looping pattern in clocked mode is a periodic job.
 
 #### Loops
 
-- **Pattern mode** loops the current pattern: forever, N times, or `until <expr>`.
+- **Pattern mode** loops the current pattern: forever, N times, or `until <expr>`. In the studio, **PAT Play repeats until Stop**, as in FL. Each repeat is a fresh, paced run of the pattern (with its own `until`/`max`) using `cache: "prefer"`, so edits made while it plays land on the next repeat, and unchanged voices replay for free. This is the tweak-while-it-loops workflow.
 - **Loop markers** in the Playlist do the same for a region of the arrangement (`until`, `max`).
 - Every pass increments `loop.index` (0-based) and records a new **take** (§9). `max` is the number of passes, so `max: 5` runs passes 0–4.
 - The `until` condition is evaluated at the barrier at the end of the loop.
@@ -470,6 +472,14 @@ The app is a single window with dockable, detachable panels and FL-style shortcu
 ```
 
 ### 6.2 Interaction rules
+- **FL's window model.** The Playlist is the background window. Channel Rack, Piano Roll, Mixer, Tracer and Monitor float over it, and F5–F11 toggle them.
+- **FL's mouse grammar everywhere.**
+  - **Left-click** draws or places (a step, a note, or a clip of the selected pattern), and **right-click** deletes.
+  - **Drag** moves, **dragging the right edge** resizes, and **Shift+drag** box-selects.
+  - The **scroll wheel** turns knobs and number boxes (effort, output bus, tempo).
+  - **Double-click** opens a note's properties, or a channel's window.
+  - One drag is one undo step.
+- **The Monitor is the speaker.** It shows what reaches Master, live, readable and colored by source channel. Click a mixer strip to monitor that bus instead. Notes and clips show a one-line preview of their latest output, the agent equivalent of a waveform preview.
 - **Drag anything from the Browser:** an agent preset onto the Rack makes a channel, a dataset onto the Playlist makes a data clip, a processor onto a mixer slot inserts it, and a take onto the Playlist makes a data clip of that take.
 - **Running clips** pulse. **Failed** notes and clips turn red, and hovering shows the error with a retry button. **Stale** clips get an amber outline. **Cached** clips show a ⧉ badge.
 - **Live edits during playback** take effect at the next barrier (barrier mode) or bar (clocked mode), and never touch a voice that's already running.

@@ -11,7 +11,8 @@ import { eventsFile, refresh, studioFile } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
 const UI = new URL("../ui/", import.meta.url);
-const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript" };
+const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript", ".js": "text/javascript" };
+const VENDOR = new URL("../node_modules/", import.meta.url);
 
 export async function studio(o: { file: string; port?: number }) {
   const file = resolve(o.file), dir = dirname(file), log = eventsFile(dir);
@@ -33,14 +34,30 @@ export async function studio(o: { file: string; port?: number }) {
     const lines = txt.slice(0, end).split("\n").filter(Boolean).flatMap((l) => { try { return [JSON.parse(l)]; } catch { return []; } });
     return { size: from + Buffer.byteLength(txt.slice(0, end)), lines };
   };
-  const recent = () => readEvents(Math.max(0, (existsSync(log) ? statSync(log).size : 0) - 200_000)).lines.slice(-300); // ponytail: tail window, may drop a cut first line
+  const recent = () => readEvents(Math.max(0, (existsSync(log) ? statSync(log).size : 0) - 600_000)).lines.slice(-1000); // ponytail: tail window (frame events make it busy), may drop a cut first line
   const state = () => {
     const s = host.cur();
     // ponytail: the latest take's frames (capped at 500) ride along with every state push; page them if takes get big
     const { takes, latest } = withTakes((t) => { const takes = t.list(10) as any[], g = takes[0] && t.get(takes[0].id); return { takes, latest: g && { ...g, frames: t.frames(takes[0].id).slice(-500) } }; });
     let sc = ""; try { sc = score(s.p); } catch (e: any) { sc = `cannot draw the score yet: ${e.message}`; }
-    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: [...host.runs.values()].some((r) => r.status === "running") };
+    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: playing() };
   };
+  const playing = () => !!loop || [...host.runs.values()].some((r) => r.status === "running");
+  // PAT Play loops until Stop, like FL: each repeat is a fresh paced run of the *current* project (edits land on the next repeat), cached voices replay free.
+  // ponytail: the budget applies per repeat, nothing caps the loop's total spend; add a loop-wide cap if llm.agent loops get left running
+  let loop: { stop: boolean } | null = null;
+  async function patLoop(pattern: string, pace: unknown) {
+    const me = (loop = { stop: false });
+    try {
+      for (let repeat = 1; !me.stop; repeat++) {
+        const { runId } = await host.call("run_start", { pattern, cache: "prefer", pace, wait: false }, { source: "studio", repeat });
+        const r = host.runs.get(runId);
+        if (me.stop) r.ac.abort(); // Stop landed while this repeat was starting
+        await r.promise;
+        if (r.status !== "done") break; // stopped, failed or over budget: the loop ends with it
+      }
+    } catch {} finally { if (loop === me) loop = null; send("state", state()); } // ponytail: a repeat refused at start (validation errors) just ends the loop; the hint shows the first refusal only
+  }
 
   // watch the project file (dir watch: atomic renames replace the inode) and tail the event log
   let t1: any, t2: any, offset = existsSync(log) ? statSync(log).size : 0;
@@ -66,20 +83,33 @@ export async function studio(o: { file: string; port?: number }) {
       res.write(": hi\n\n"); clients.add(res); req.on("close", () => clients.delete(res));
     },
     "GET /api/take/(\\w+)": (_q, res, m) => withTakes((t) => { const g = t.get(m[1]); g ? json(res, 200, { ...g, frames: t.frames(m[1]) }) : json(res, 404, { error: "unknown take" }); }),
-    // browser actions: the same tools an MCP client calls, as source "studio"
+    // browser actions: the same tools an MCP client calls, as source "studio". The UI's Play sends pace: "project"; without it a run is unpaced
     "POST /api/patch": async (req, res) => {
       const a = await body(req), r = await host.call("project_patch", { ops: a.ops }, { source: "studio", summary: a.summary });
       json(res, 200, { ok: true, errors: r.errors });
     },
     "POST /api/run": async (req, res) => {
       const a = await body(req);
-      if ([...host.runs.values()].some((r) => r.status === "running")) return json(res, 409, { error: "a run is already playing" });
-      await host.call("run_start", { pattern: a.pattern, arrangement: a.arrangement, cache: a.cache, wait: false }, { source: "studio" });
-      json(res, 202, { ok: true });
+      if (playing()) return json(res, 409, { error: "a run is already playing" });
+      if (a.pattern) {
+        const errors = check(host.cur().p);
+        if (errors.length) throw new Error(`fix the project first (${errors.length} errors)`);
+        patLoop(a.pattern, a.pace);
+        json(res, 202, { ok: true, loop: true });
+      } else {
+        await host.call("run_start", { arrangement: a.arrangement, cache: a.cache, pace: a.pace, wait: false }, { source: "studio" });
+        json(res, 202, { ok: true });
+      }
     },
-    "POST /api/stop": async (_q, res) => { if (host.runs.size) await host.call("run_stop", {}, { source: "studio" }); json(res, 200, { ok: true }); },
+    "POST /api/stop": async (_q, res) => { if (loop) loop.stop = true; if (host.runs.size) await host.call("run_stop", {}, { source: "studio" }); json(res, 200, { ok: true }); },
+    "POST /api/tempo": async (req, res) => {
+      const { bpm } = await body(req), p = host.cur().p;
+      if (!(typeof bpm === "number" && bpm >= 10 && bpm <= 999)) throw new Error("bpm must be a number from 10 to 999");
+      const r = await host.call("project_patch", { ops: [p.clock ? { op: "add", path: "/clock/bpm", value: bpm } : { op: "add", path: "/clock", value: { bpm } }] }, { source: "studio", summary: `tempo ${bpm} BPM` });
+      json(res, 200, { ok: true, errors: r.errors });
+    },
     "POST /api/undo": async (_q, res) => json(res, 200, { ok: true, undone: (await host.call("undo", {}, { source: "studio" })).undone }),
-    "POST /api/view": async (req, res) => { const { panel, pattern, channel, voice, selection } = await body(req); host.view = { panel, pattern, channel, voice, selection }; json(res, 200, { ok: true }); },
+    "POST /api/view": async (req, res) => { const { panel, pattern, channel, voice, selection, windows } = await body(req); host.view = { panel, pattern, channel, voice, selection, windows }; json(res, 200, { ok: true }); },
     // the MCP relay: NDJSON {progress} lines, then {result} or {error}. The token is only in studio.json (0600), never sent to a browser.
     "POST /api/tool": async (req, res) => {
       const got = Buffer.from(req.headers.authorization ?? ""), want = Buffer.from(`Bearer ${token}`);
@@ -95,6 +125,10 @@ export async function studio(o: { file: string; port?: number }) {
         });
         res.end(JSON.stringify({ result }) + "\n");
       } catch (e: any) { res.end(JSON.stringify({ error: e.message }) + "\n"); }
+    },
+    // Preact + htm ESM builds straight from node_modules (index.html maps the bare imports); no bundler
+    "GET /vendor/((?:preact|htm)/(?:[\\w-]+/)*[\\w.-]+\\.js)": (_q, res, m) => {
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" }); res.end(readFileSync(new URL(m[1], VENDOR)));
     },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {
       const name = m[1]?.slice(3) ?? "index.html", ext = name.slice(name.lastIndexOf("."));

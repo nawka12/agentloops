@@ -9,13 +9,13 @@ import { validate } from "../src/project.ts";
 const p1 = () => JSON.parse(readFileSync(new URL("../examples/p1.alp.json", import.meta.url), "utf8"));
 const tmp = () => mkdtempSync(join(tmpdir(), "alp-"));
 
-test("P1 renders in 3 passes; Master gets exactly the approved pass-2 draft", async () => {
+test("P1 renders in 3 passes; Master gets exactly the approved pass-3 draft", async () => {
   const proj = { p: p1(), dir: tmp() };
   assert.deepEqual(validate(proj.p), []);
   const r = await render(proj, { input: { topic: "CRDTs" } });
   assert.equal(r.passes, 3);
   assert.equal(r.master.length, 1);
-  assert.match(r.master[0].text, /^Revision \(pass 2\)/);
+  assert.match(r.master[0].text, /^Revision \(pass 3\)/);
   assert.equal(r.voicesRun, 6); // writer + critic x 3 passes
   assert.equal(r.stopped, null);
 });
