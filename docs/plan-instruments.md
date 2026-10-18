@@ -4,6 +4,32 @@ Status: planned 2026-10-18. Slice A in progress on branch `slice-8-instruments` 
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
 
+## Feedback from a song agent (2026-10-19, after slice A)
+
+An agent writing a jazz/kawaii song ("Strawberry Bebop") listed what it had to fake. Verified against the code where possible.
+
+**Stand-ins it used, most needed first:**
+1. **Ride cymbal** (GM 51, bell 53). The manual's jazz tips (docs/manual.md:200) say to play a ride, but there is none: 51 is a rim click, so the song used a closed hat (42). A **brushes** kit (snare swish) would also replace its "Brushes (ghost notes)" channel, which is really a quiet second kit. *This is the top item: the manual tells songs to use a sound that doesn't exist.*
+2. **Upright bass, sampled.** The walking bass was a triangle. Needs E2 (40) and below; that song walks down to F3 (41).
+3. **Vocal chops** (sampled "ooh/aah/ha" or a formant synth). The scat line was a square. Central to kawaii bass, so it helps every song in that style. *Not in this plan yet.*
+
+**Gaps in the kit and sound list:**
+4. **Toms** (41–50): all rim clicks today, so fills only have the snare. (Was slice C.)
+5. **Rhodes epiano**: bell was standing in. Needed for lo-fi and neo-soul.
+6. **Vibraphone or glockenspiel**: jazz and kawaii, a softer bell hook. (Iowa has "Bells" for glockenspiel.)
+7. **Growl/wobble bass** for kawaii future bass drops; only `sub` exists. (Was slice C.)
+
+**Limits of the new samples:**
+- **Sax loop points:** a note longer than its 2.5–4 s recording cuts off, which blocks ballad endings and held notes (the `ponytail:` in ui/sound.ts).
+- **A low horn:** the alto stops at 49 (C#3), so there's no low horn line. Free tenor sax wasn't found; Iowa has a tenor trombone. *Not in this plan yet.*
+- **Per-channel reverb and pan:** only the sax has a reverb setting (`wet: 0.25`), and channels can't set reverb or pan, so the band sounds flat. Notes already carry `pan` (src/project.ts:249) but ui/sound.ts ignores it. *Not in this plan yet; it overlaps "Not in this plan: per-channel knobs".*
+
+**Finding instruments:**
+- Every sound gets a manual line with its key range, what vel does and what happens to long notes, like piano and sax have.
+- **Stale SKILL.md:** a song folder's `.claude/skills/agentloops/SKILL.md` is written once by `init`/connect and never refreshed (src/connect.ts:61 skips existing files), so it didn't mention piano or sax; the agent found them by searching the installed package. Have `init` (or the MCP server on startup) refresh it, so new sounds show up on their own. *Not in this plan yet.*
+
+**Effect on the slices:** slice B starts with the ride (51, bell 53, 59) and brushes, then the upright, and pulls toms and the GM keys forward from C. The new items above (vocal chops, sax loops, a low horn, channel reverb/pan, SKILL.md refresh) need a decision on which slice they join.
+
 ## Where things are today
 
 | What | Where |
