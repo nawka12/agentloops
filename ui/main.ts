@@ -409,7 +409,7 @@ let queued = false;
 const root = document.getElementById("app")!;
 export function paint() {
   if (queued) return; queued = true;
-  requestAnimationFrame(() => { queued = false; if (S.project) { render(App(), root); reportView(); } });
+  requestAnimationFrame(() => { queued = false; if (S.project) { document.title = `${S.project.name ?? S.file} — AgentLoops`; render(App(), root); reportView(); } });
 }
 
 // ---- the playhead: interpolated from the last barrier's wall clock and the tempo, clamped at the next barrier (a stall) ----

@@ -1,6 +1,10 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { spawn, spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { delimiter, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { harnessFiles, HARNESSES } from "./connect.ts";
 import { loadProject, pos, starter, STEP, validate, type Err } from "./project.ts";
@@ -12,7 +16,10 @@ const USAGE = `usage:
   agentloops score <file> [--pattern id]
   agentloops mcp [--project <file>] [--scope read|edit|run] [--budget <usd>]   (Studio MCP server on stdio)
   agentloops init [dir] [--harness claude-code|codex|cursor|opencode|other]
-  agentloops studio <file> [--port 4870] [--no-open]   (local web UI on 127.0.0.1)`;
+  agentloops studio [file] [--port 4870] [--browser] [--no-open]   (local web UI on 127.0.0.1)
+      opens in its own app window (Chromium family; AGENTLOOPS_BROWSER=<path> picks one) and quits when the window closes;
+      --browser uses the default browser instead (quit with Ctrl+C); no file opens the first song in ~/AgentLoops
+  agentloops install   (Linux: app-menu entry, icon and *.alp.json file type under $XDG_DATA_HOME)`;
 
 function load(file: string) {
   try { return loadProject(file); }
@@ -96,13 +103,85 @@ function init(dir: string, harness = "other") {
   if (r.snippet) console.log(`\n${r.snippet}`);
 }
 
+const BROWSERS = ["chromium", "chromium-browser", "google-chrome-stable", "google-chrome", "brave-browser", "microsoft-edge-stable", "microsoft-edge"];
+const MAC_APPS = ["Google Chrome", "Chromium", "Brave Browser", "Microsoft Edge"];
+/** first executable named `cmd` on PATH */
+export function onPath(cmd: string, path = process.env.PATH ?? ""): string | undefined {
+  for (const d of path.split(delimiter)) { const f = join(d, cmd); try { accessSync(f, constants.X_OK); return f; } catch {} }
+}
+/** A Chromium-family browser for the app window: $AGENTLOOPS_BROWSER, else PATH (Linux), else /Applications (macOS). `which` and `exists` are injectable for tests. */
+export function findBrowser(which: (cmd: string) => string | undefined = onPath, env = process.env, platform = process.platform, exists = existsSync): string | undefined {
+  if (env.AGENTLOOPS_BROWSER) return env.AGENTLOOPS_BROWSER;
+  if (platform === "darwin") return MAC_APPS.map((a) => `/Applications/${a}.app/Contents/MacOS/${a}`).find((f) => exists(f));
+  for (const b of BROWSERS) { const f = which(b); if (f) return f; }
+}
+/** the window's own profile dir (one per song), so its process lives exactly as long as the window */
+const windowProfile = (file: string, env = process.env) => join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "agentloops", "window", createHash("sha1").update(resolve(file)).digest("hex").slice(0, 12));
+
+function openDefault(url: string) {
+  const [cmd, ...args] = process.platform === "darwin" ? ["open", url] : process.platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
+  spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
+}
+/** App window if a Chromium turns up (the studio quits when it closes), else the default browser. */
+function openWindow(url: string, file: string, browserFlag?: boolean) {
+  const exe = browserFlag ? undefined : findBrowser();
+  if (!exe) return openDefault(url);
+  const args = [`--app=${url}`, `--user-data-dir=${windowProfile(file)}`, "--no-first-run", "--no-default-browser-check", "--class=AgentLoops"];
+  // ponytail: a second studio on the same song hands off to the first one's browser process and exits at once, which would quit this studio; one studio per song is the norm
+  spawn(exe, args, { stdio: "ignore" }).on("error", () => openDefault(url)).on("exit", () => { console.error("agentloops studio: window closed, quitting"); process.exit(0); });
+}
+
+/** the first song in ~/AgentLoops; the folder is made the way `init` makes it when it has none */
+function homeSong(): string {
+  const dir = join(homedir(), "AgentLoops"), first = () => existsSync(dir) ? readdirSync(dir).filter((f) => f.endsWith(".alp.json")).sort()[0] : undefined;
+  if (!first()) init(dir);
+  return join(dir, first()!);
+}
+
+/** Desktop entry Exec argument: quote if it has spaces or reserved characters; escape "`$\ inside, double every backslash, % is a field code */
+export const execArg = (a: string) => (/[\s"'`$\\<>~|&;*?#()%]/.test(a) ? `"${a.replace(/(["`$\\])/g, "\\$1")}"` : a).replace(/\\/g, "\\\\").replace(/%/g, "%%");
+
+/** Linux app-menu integration: .desktop entry, icon and a MIME type for *.alp.json under $XDG_DATA_HOME */
+function install() {
+  if (process.platform !== "linux") { console.log("agentloops install is Linux-only (app-menu entry); nothing to do here"); return; }
+  const data = process.env.XDG_DATA_HOME || join(homedir(), ".local/share"), cli = fileURLToPath(import.meta.url);
+  const files: Record<string, string> = {
+    "applications/agentloops.desktop": `[Desktop Entry]
+Type=Application
+Name=AgentLoops
+Comment=Studio for multi-agent songs
+Exec=${execArg(process.execPath)} ${execArg(cli)} studio %f
+Icon=agentloops
+MimeType=application/x-agentloops-song;
+StartupWMClass=AgentLoops
+Terminal=false
+Categories=AudioVideo;Audio;Development;
+`,
+    "mime/packages/agentloops.xml": `<?xml version="1.0" encoding="UTF-8"?>
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-agentloops-song">
+    <comment>AgentLoops song</comment>
+    <sub-class-of type="application/json"/>
+    <glob pattern="*.alp.json"/>
+  </mime-type>
+</mime-info>
+`,
+  };
+  const write = (rel: string, put: (f: string) => void) => { const f = join(data, rel); mkdirSync(join(f, ".."), { recursive: true }); put(f); console.log(`wrote ${f}`); };
+  for (const [rel, text] of Object.entries(files)) write(rel, (f) => writeFileSync(f, text));
+  write("icons/hicolor/scalable/apps/agentloops.svg", (f) => copyFileSync(new URL("../ui/icon.svg", import.meta.url), f));
+  spawnSync("update-mime-database", [join(data, "mime")], { stdio: "ignore" }); // either may be missing: the entries still work after the next login
+  spawnSync("update-desktop-database", [join(data, "applications")], { stdio: "ignore" });
+  console.log(`to remove: rm ${["applications/agentloops.desktop", "icons/hicolor/scalable/apps/agentloops.svg", "mime/packages/agentloops.xml"].map((r) => join(data, r)).join(" ")}`);
+}
+
 async function main() {
   const [cmd, ...rest] = process.argv.slice(2);
   const { values, positionals } = parseArgs({
     args: rest, allowPositionals: true,
     options: {
       json: { type: "boolean" }, arrangement: { type: "string" }, pattern: { type: "string" }, input: { type: "string" }, cache: { type: "string" }, budget: { type: "string" },
-      project: { type: "string" }, scope: { type: "string" }, harness: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" },
+      project: { type: "string" }, scope: { type: "string" }, harness: { type: "string" }, port: { type: "string" }, "no-open": { type: "boolean" }, browser: { type: "boolean" },
     },
   });
   if (cmd === "mcp") {
@@ -114,13 +193,14 @@ async function main() {
     if (values.harness && values.harness !== "agents-md" && !HARNESSES.some((x) => x.id === values.harness)) { console.error(`--harness must be one of ${HARNESSES.map((x) => x.id).join(", ")}`); process.exit(2); }
     return init(positionals[0] ?? ".", values.harness);
   }
-  const file = positionals[0];
-  if (cmd === "studio" && file) {
+  if (cmd === "install") return install();
+  const file = cmd === "studio" ? positionals[0] ?? homeSong() : positionals[0];
+  if (cmd === "studio") {
     const { studio } = await import("./studio.ts");
     const s = await studio({ file, port: values.port ? Number(values.port) : 4870 });
     for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(0)); // the exit handler removes .agentloops/studio.json
     console.error(`agentloops studio: ${s.url}  (Ctrl+C to quit)`);
-    if (!values["no-open"]) import("node:child_process").then((c) => c.spawn("xdg-open", [s.url], { stdio: "ignore", detached: true }).on("error", () => {}).unref());
+    if (!values["no-open"]) openWindow(s.url, file, values.browser);
     return;
   }
   if (!["validate", "render", "score"].includes(cmd) || !file) { console.error(USAGE); process.exit(2); }

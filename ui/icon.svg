@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+<rect width="64" height="64" rx="12" fill="#1d2226"/>
+<!-- loop: an open ring with an arrowhead where it closes -->
+<rect x="4" y="4" width="56" height="56" rx="9" fill="none" stroke="#ffa53a" stroke-width="2.5" stroke-dasharray="150 200" stroke-dashoffset="-33"/>
+<path d="M30 0.5 40 4 30 7.5z" fill="#ffa53a"/>
+<!-- 4x4 steps: lit = FL orange -->
+<g fill="#4a555d"><rect x="11" y="11" width="9" height="9" rx="1.5"/><rect x="22.3" y="11" width="9" height="9" rx="1.5"/><rect x="33.6" y="11" width="9" height="9" rx="1.5"/><rect x="44.9" y="11" width="9" height="9" rx="1.5"/>
+<rect x="11" y="22.3" width="9" height="9" rx="1.5"/><rect x="22.3" y="22.3" width="9" height="9" rx="1.5"/><rect x="33.6" y="22.3" width="9" height="9" rx="1.5"/><rect x="44.9" y="22.3" width="9" height="9" rx="1.5"/>
+<rect x="11" y="33.6" width="9" height="9" rx="1.5"/><rect x="22.3" y="33.6" width="9" height="9" rx="1.5"/><rect x="33.6" y="33.6" width="9" height="9" rx="1.5"/><rect x="44.9" y="33.6" width="9" height="9" rx="1.5"/>
+<rect x="11" y="44.9" width="9" height="9" rx="1.5"/><rect x="22.3" y="44.9" width="9" height="9" rx="1.5"/><rect x="33.6" y="44.9" width="9" height="9" rx="1.5"/><rect x="44.9" y="44.9" width="9" height="9" rx="1.5"/></g>
+<g fill="#ffa53a"><rect x="11" y="11" width="9" height="9" rx="1.5"/><rect x="33.6" y="11" width="9" height="9" rx="1.5"/><rect x="22.3" y="22.3" width="9" height="9" rx="1.5"/><rect x="44.9" y="22.3" width="9" height="9" rx="1.5"/><rect x="11" y="33.6" width="9" height="9" rx="1.5"/><rect x="33.6" y="33.6" width="9" height="9" rx="1.5"/><rect x="22.3" y="44.9" width="9" height="9" rx="1.5"/><rect x="44.9" y="44.9" width="9" height="9" rx="1.5"/></g>
+</svg>
