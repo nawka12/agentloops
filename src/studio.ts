@@ -3,8 +3,8 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
 import { basename, dirname, resolve } from "node:path";
-import { stripTypeScriptTypes } from "node:module";
-import { fileURLToPath } from "node:url";
+import { createRequire, stripTypeScriptTypes } from "node:module";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
 import { score } from "./cli.ts";
 import { harnessFiles, HARNESSES } from "./connect.ts";
@@ -16,7 +16,8 @@ import { openTakes } from "./takes.ts";
 
 const UI = new URL("../ui/", import.meta.url);
 const TYPES: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".ts": "text/javascript", ".js": "text/javascript" };
-const VENDOR = new URL("../node_modules/", import.meta.url);
+// where npm put them (hoisted or nested): the package folder is the entry file's path up to `/<name>/`
+const VENDOR = Object.fromEntries(["preact", "htm"].map((n) => { const f = createRequire(import.meta.url).resolve(n); return [n, pathToFileURL(f.slice(0, f.lastIndexOf(`/${n}/`) + n.length + 2))]; }));
 const DEMOS = new URL("../examples/", import.meta.url), PRESETS = new URL("../presets/", import.meta.url);
 const SONG = /^[\w.-]+\.alp\.json$/;
 /** `*.alp.json` files in a folder, with their song names */
@@ -223,9 +224,9 @@ export async function studio(o: { file: string; port?: number }) {
         res.end(JSON.stringify({ result }) + "\n");
       } catch (e: any) { res.end(JSON.stringify({ error: e.message }) + "\n"); }
     },
-    // Preact + htm ESM builds straight from node_modules (index.html maps the bare imports); no bundler
-    "GET /vendor/((?:preact|htm)/(?:[\\w-]+/)*[\\w.-]+\\.js)": (_q, res, m) => {
-      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" }); res.end(readFileSync(new URL(m[1], VENDOR)));
+    // Preact + htm ESM builds straight from their npm folders (index.html maps the bare imports); no bundler
+    "GET /vendor/(preact|htm)/((?:[\\w-]+/)*[\\w.-]+\\.js)": (_q, res, m) => {
+      res.writeHead(200, { "content-type": "text/javascript; charset=utf-8", "cache-control": "max-age=3600" }); res.end(readFileSync(new URL(m[2], VENDOR[m[1]])));
     },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {
       const name = m[1]?.slice(3) ?? "index.html", ext = name.slice(name.lastIndexOf("."));

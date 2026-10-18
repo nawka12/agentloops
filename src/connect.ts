@@ -16,39 +16,40 @@ export const HARNESSES = [
 ];
 
 const SKILL_DESC = "Use when the user asks to make, build, edit, run or debug an AgentLoops song or project (an .alp.json file): a multi-agent pipeline of channels, patterns, buses and loops. Teaches the project format, the Studio MCP tools and the authoring loop.";
-const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url)); // absolute path: no global install needed
+const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url)); // absolute path: no global install needed (dist/cli.js once built)
+const NODE = process.execPath; // the node running us: a harness may have an older one on PATH
 
 /** the MCP server command for this song */
-export const mcpArgs = (songFile: string) => [CLI, "mcp", "--project", songFile, "--scope", "run", "--budget", "1"];
+export const mcpArgs = (songFile: string) => ["--disable-warning=ExperimentalWarning", CLI, "mcp", "--project", songFile, "--scope", "run", "--budget", "1"];
 const json = (v: any) => JSON.stringify(v, null, 2) + "\n";
 
 /** Write a harness's files into `dir` for `songFile`. Returns what was written, what already existed, what to do next, and a config snippet to paste when a config file could not be written. */
 export function harnessFiles(dir: string, harness: string, songFile: string) {
-  const args = mcpArgs(songFile), cmd = `node ${args.map((a) => (/^[\w./:=@-]+$/.test(a) ? a : JSON.stringify(a))).join(" ")}`;
+  const args = mcpArgs(songFile), cmd = `${NODE} ${args.map((a) => (/^[\w./:=@-]+$/.test(a) ? a : JSON.stringify(a))).join(" ")}`;
   // [path, content, snippet for when the path already exists (or the harness has no project-local config)]
   const AGENTS: [string, string, string?] = ["AGENTS.md", MANUAL];
-  const mcpJson: [string, string, string] = [".mcp.json", json({ mcpServers: { agentloops: { command: "node", args } } }), ""];
+  const mcpJson: [string, string, string] = [".mcp.json", json({ mcpServers: { agentloops: { command: NODE, args } } }), ""];
   const entries: Record<string, { files: [string, string, string?][]; next: string; snippet?: string }> = {
     "claude-code": {
       files: [mcpJson, [".claude/skills/agentloops/SKILL.md", `---\nname: agentloops\ndescription: ${JSON.stringify(SKILL_DESC)}\n---\n\n${MANUAL}`]],
       next: `run \`claude\` in ${dir} (approve the agentloops MCP server when asked)`,
     },
     codex: {
-      files: [AGENTS, [".codex/config.toml", `[mcp_servers.agentloops]\ncommand = "node"\nargs = ${JSON.stringify(args)}\n`, ""]],
+      files: [AGENTS, [".codex/config.toml", `[mcp_servers.agentloops]\ncommand = ${JSON.stringify(NODE)}\nargs = ${JSON.stringify(args)}\n`, ""]],
       next: `run \`codex\` in ${dir} and trust the project: Codex only reads a project's .codex/config.toml once it is trusted`,
     },
     cursor: {
-      files: [AGENTS, [".cursor/mcp.json", json({ mcpServers: { agentloops: { type: "stdio", command: "node", args } } }), ""]],
+      files: [AGENTS, [".cursor/mcp.json", json({ mcpServers: { agentloops: { type: "stdio", command: NODE, args } } }), ""]],
       next: `open ${dir} in Cursor and switch the agentloops server on under Settings > Tools & MCP`,
     },
     opencode: {
-      files: [AGENTS, ["opencode.json", json({ $schema: "https://opencode.ai/config.json", mcp: { agentloops: { type: "local", command: ["node", ...args], enabled: true } } }), ""]],
+      files: [AGENTS, ["opencode.json", json({ $schema: "https://opencode.ai/config.json", mcp: { agentloops: { type: "local", command: [NODE, ...args], enabled: true } } }), ""]],
       next: `run \`opencode\` in ${dir}`,
     },
     other: {
       files: [AGENTS],
       next: `add the AgentLoops server to your harness's MCP settings (snippet below), then start it in ${dir}`,
-      snippet: `command: node\nargs: ${JSON.stringify(args)}\n\nor as one line:\n${cmd}`,
+      snippet: `command: ${NODE}\nargs: ${JSON.stringify(args)}\n\nor as one line:\n${cmd}`,
     },
   };
   const e = entries[harness === "agents-md" ? "other" : harness];
