@@ -1,3 +1,5 @@
+import { runScript } from "./sandbox.ts";
+
 export const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
 
 // $/MTok [input, output], from the claude-api skill model table (cached 2026-10-06).
@@ -11,11 +13,9 @@ const EFFORTS = ["low", "medium", "high", "xhigh", "max"];
 
 export type Raw = { text?: string; json?: unknown; meta?: Record<string, unknown>; kind?: string; trust?: string };
 
-// ponytail: not sandboxed; worker + permissions per SPEC §12 later
 async function script(ctx: any): Promise<Raw[]> {
   ctx.checkBudget?.();
-  const fn = new AsyncFunction("ctx", ctx.params.code);
-  const r = await fn({ prompt: ctx.prompt, inputs: ctx.inputs, note: ctx.note, loop: ctx.loop, trigger: ctx.trigger, params: ctx.params, history: ctx.history });
+  const r = await runScript(ctx.params.code, { prompt: ctx.prompt, inputs: ctx.inputs, note: ctx.note, loop: ctx.loop, trigger: ctx.trigger, params: ctx.params, history: ctx.history, attempt: ctx.voice?.attempt, feedback: ctx.voice?.feedback }); // sandboxed: ctx goes in and the result comes back as JSON
   const items = Array.isArray(r) ? r : [r];
   if (!items.length) throw new Error("script returned an empty array");
   const usd = items.reduce((a: number, x: any) => a + (Number(x?.meta?.costUsd) || 0), 0); // a script's reported cost counts against budgets (tests and spend caps without an API key)

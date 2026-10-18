@@ -22,7 +22,7 @@ Gotchas:
 - A gate needs hold:"pass" to wait for a later verdict.
 - sends omitted means Master; sends:[] means nowhere.
 - Only final frames are read by default.
-- script code is not sandboxed: run scope can execute code.
+- script code is sandboxed (ctx, setTimeout and JS built-ins only; no fs, network, require or import; JSON-able results).
 
 If a studio is open, studio_status says so and your calls are shared with it. After an edit the user should see, call studio_focus to show them.`;
 
