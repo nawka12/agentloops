@@ -606,7 +606,7 @@ Import an external agent log (OpenTelemetry GenAI spans, or JSONL transcripts fr
 ## 10. Render, serve, MCP and the CLI
 
 ```
-agentloops studio [project]             # local web UI (MVP shell), opens the browser
+agentloops studio [project]             # the studio in its own app window (Chromium --app), or a browser tab
 agentloops render project.alp.json      # headless run of the active arrangement
     --arrangement production --input brief.md --cache fresh|prefer --budget 5
     --stems out/                        # write every bus's final frames as files
@@ -826,7 +826,7 @@ A position is either a tick count (384 ticks per bar, 24 per step) or a `"bar:st
 |---|---|---|
 | Engine | TypeScript library (`@agentloops/engine`), Node ≥ 22 | Shared by UI, CLI and server. The agent and MCP SDK ecosystems are strongest in TS and Python. |
 | UI | React + TypeScript. Playlist, Piano Roll and Step Sequencer on Canvas 2D with virtualized drawing. Panels in the DOM. | Canvas handles thousands of notes and clips. No game engine needed. |
-| Shell (MVP) | `agentloops studio`: a local HTTP + WebSocket server and the browser | Zero install friction, like Jupyter |
+| Shell (v1.0) | `agentloops studio`: a local HTTP + SSE server, shown in a Chromium `--app` window with its own profile (the studio quits when the window closes), else the default browser. A web app manifest, and `agentloops install` for the Linux app menu and `*.alp.json` files | Zero install friction, like Jupyter, but it looks and quits like an app |
 | Shell (later) | Electron, with the engine in a utility process | Native menus, file associations, keychain. Same engine binary. |
 | Storage | Project: JSON. Takes: SQLite (`better-sqlite3`), one DB per project | Diffable projects, queryable takes |
 | Models | Anthropic SDK first-class, plus an OpenAI-compatible adapter for other providers | Wide coverage with two adapters |
