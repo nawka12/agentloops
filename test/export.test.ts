@@ -176,6 +176,25 @@ test("audio_export with no tab renders in headless Chromium", { skip: chromium ?
   } finally { await m.client.close(); await s.close(); }
 });
 
+test("export timing: a 64 s click track starts at 0 and stays on the grid", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async () => {
+  const bpm = 180, beats = 192; // 48 bars of claves on every beat (a click with a 1 ms attack)
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Click", clock: { bpm },
+    channels: [{ id: "d", name: "D", sound: "drums", generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 75, name: "click", template: "x" }] }],
+    patterns: [{ id: "p", lengthSteps: beats * 4, notes: { d: Array.from({ length: beats }, (_, i) => ({ start: i * 96, len: 24, key: 75 })) } }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "click.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24), frames = (b.length - 44) / 4, on: number[] = [];
+    for (let i = 0, last = -rate; i < frames; i++) if (Math.abs(b.readInt16LE(44 + i * 4)) > 1000 && i - last > rate / 10) on.push(i / rate), (last = i); // rising past -30 dBFS
+    const err = on.map((t, k) => t - (k * 60) / bpm), drift = ((err.at(-1)! - err[0]) / on.at(-1)!) * 1000;
+    assert.equal(on.length, beats);
+    assert.ok(Math.abs(err[0]) < 0.002, `first click at ${(err[0] * 1000).toFixed(2)} ms, want 0`);
+    assert.ok(Math.abs(drift) < 0.1, `drift ${drift.toFixed(3)} ms/s`);
+  } finally { await m.client.close(); await s.close(); }
+});
+
 test("every sound renders: not silent, level within 10 dB of triangle", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
   // ponytail: ±10 dB, not 6: today's `sub` sits at +7 dB and `pluck` at -9 dB of triangle (a decaying note over a 2 s bar). Retune those, then tighten
   const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a ride for brushes)

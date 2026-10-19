@@ -18,7 +18,7 @@ export async function exportAudio(toFolder = false) {
   S.exporting = true; paint();
   try {
     const q = S.mode === "pat" ? `pattern=${encodeURIComponent(curPattern()?.id ?? "")}` : `arrangement=${encodeURIComponent(S.project.arrangements?.[0]?.id ?? "")}`;
-    if (toFolder) { // same path as the MCP tool: slow (about 1.6x the song's length), and it refuses to overwrite a file of the same name
+    if (toFolder) { // same path as the MCP tool: about 0.3x the song's length, and it refuses to overwrite a file of the same name
       S.notice = "Rendering MP3 for the project folder…"; paint();
       const r = await fetch("/api/export", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(S.mode === "pat" ? { pattern: curPattern()?.id } : { arrangement: S.project.arrangements?.[0]?.id }) }), j = await r.json();
       if (!r.ok) throw new Error(j.error);

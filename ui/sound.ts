@@ -25,8 +25,8 @@ const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?
 const KITS = ["drums", "brushes"], RIDE = [51, 53].flatMap((k) => [`ride/${k}`, `ride/${k}-p`]); // both kits share one sampled ride: bow (51, 59) and bell (53), each mf and soft
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
-/** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks, a reverb send, shared noise. */
-type Rig = { c: BaseAudioContext; out: GainNode; pump: GainNode; verb: GainNode; noise: AudioBuffer };
+/** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks (`duck` is its gain stage, even when a note gets its own `pump`), a reverb send, shared noise. */
+type Rig = { c: BaseAudioContext; out: GainNode; pump: GainNode; duck: GainNode; verb: GainNode; noise: AudioBuffer };
 function rig(c: BaseAudioContext, vol: number): Rig {
   const comp = c.createDynamicsCompressor(); // a limiter so a full band never clips
   comp.threshold.value = -20; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.2;
@@ -37,7 +37,7 @@ function rig(c: BaseAudioContext, vol: number): Rig {
   conv.buffer = ir;
   const nb = c.createBuffer(1, c.sampleRate, c.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
   pump.connect(out); verb.connect(conv); conv.connect(wet); wet.connect(pump); out.connect(comp); comp.connect(c.destination);
-  return { c, out, pump, verb, noise: nb };
+  return { c, out, pump, duck: pump, verb, noise: nb };
 }
 let ac: AudioContext | null = null, R: Rig;
 /** Browsers only allow audio after a user gesture: call this from Play, Space and the speaker button. */
@@ -230,7 +230,7 @@ function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, soft = fal
     const o = osc(r, "sine", 160), g = hit(r, (soft ? 0.55 : 0.9) * lvl, t, 0.38, 0.002);
     o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.13); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.42);
     if (!soft) n(filt(r, "highpass", 3000), 0.12, 0.012); // the click of the beater
-    const p = r.pump.gain; p.cancelScheduledValues(t); p.setValueAtTime(1, t); p.linearRampToValueAtTime(0.28, t + 0.012); p.setTargetAtTime(1, t + 0.04, 0.09);
+    const p = r.duck.gain; p.cancelScheduledValues(t); p.setValueAtTime(1, t); p.linearRampToValueAtTime(0.28, t + 0.012); p.setTargetAtTime(1, t + 0.04, 0.09);
   } else if (soft && key === 40) { // the swirl: bandpassed noise, a slow wobble in the band, swelling in
     const s = r.c.createBufferSource(), bp = filt(r, "bandpass", 2400, 0.5), lfo = osc(r, "sine", 1.7), ld = gain(r, 700), g = gain(r, 0.0001);
     s.buffer = r.noise; s.loop = true; lfo.connect(ld); ld.connect(bp.frequency); s.connect(bp); bp.connect(g); g.connect(r.out); send(r, g, 0.2);
@@ -278,25 +278,38 @@ export function click(accent: boolean) { if (!live() || !sound.metro) return; pi
 
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
 export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
-/** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat. A 2 s tail lets reverb ring out. */
+/** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out. */
 export async function renderWav(s: Score, rate = 44100): Promise<ArrayBuffer> {
-  const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate);
+  const pre = Math.floor(0.006 * rate); // the limiter's fixed 6 ms lookahead (DynamicsCompressor in Blink, Gecko and WebKit) delays everything: render it, then cut it off
+  const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate) + pre;
   const c = new OfflineAudioContext(2, length, rate), r = rig(c, 0.8), chs = new Map(s.channels.map((x) => [x.id, x]));
   const miss = await loadSamples(c, s.channels.map((x) => kindOf(x.plugin ?? "script", x.sound))); // decode before rendering starts
   if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
-  for (const n of [...s.notes].sort((a, b) => a.start - b.start)) { // time order: each kick's pump automation cancels what follows it
-    const ch = chs.get(n.ch), t = sec(n.start) + 0.05, v = note(r, kindOf(ch?.plugin ?? "script", ch?.sound), n.key, t, ch?.gain ?? 1, n.vel);
+  // Speed: every node wired to the output is processed in every block, sounding or not, so notes are made just ahead of the render (at a
+  // suspend each second) and each plays into its own bus, cut loose once its sources have ended (offline, nothing garbage-collects them).
+  const made: AudioScheduledSourceNode[] = [], ended: GainNode[][] = [], notes = [...s.notes].sort((a, b) => a.start - b.start); // time order: each kick's pump automation cancels what follows it
+  for (const k of ["createOscillator", "createBufferSource"] as const) { const f: any = c[k].bind(c); (c as any)[k] = () => { const x = f(); made.push(x); return x; }; }
+  let i = 0;
+  const upTo = (until: number) => { for (; i < notes.length && sec(notes[i].start) < until; i++) {
+    const n = notes[i], ch = chs.get(n.ch), t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
+    b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
+    const v = note(b, kindOf(ch?.plugin ?? "script", ch?.sound), n.key, t, ch?.gain ?? 1, n.vel);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
-  }
-  return wav(await c.startRendering());
+    let left = made.length;
+    if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };
+  } };
+  const lazy = typeof (c as any).suspend === "function"; // Gecko has no OfflineAudioContext.suspend(): there every note is made up front (slow on long songs)
+  upTo(lazy ? 2 : Infinity);
+  if (lazy) for (let at = 1; at < length / rate; at++) c.suspend(at).then(() => { for (const bus of ended.splice(0)) bus.forEach((g) => g.disconnect()); upTo(at + 2); c.resume(); }); // 1-2 s ahead
+  return wav(await c.startRendering(), pre);
 }
-/** AudioBuffer → 16-bit PCM WAV bytes */
-function wav(b: AudioBuffer): ArrayBuffer {
-  const chans = b.numberOfChannels, frames = b.length, data = frames * chans * 2, buf = new ArrayBuffer(44 + data), v = new DataView(buf);
+/** AudioBuffer → 16-bit PCM WAV bytes, minus its first `skip` frames */
+function wav(b: AudioBuffer, skip = 0): ArrayBuffer {
+  const chans = b.numberOfChannels, frames = b.length - skip, data = frames * chans * 2, buf = new ArrayBuffer(44 + data), v = new DataView(buf);
   const str = (o: number, s: string) => { for (let i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); };
   str(0, "RIFF"); v.setUint32(4, 36 + data, true); str(8, "WAVE"); str(12, "fmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, chans, true);
   v.setUint32(24, b.sampleRate, true); v.setUint32(28, b.sampleRate * chans * 2, true); v.setUint16(32, chans * 2, true); v.setUint16(34, 16, true); str(36, "data"); v.setUint32(40, data, true);
   const cd = [...Array(chans)].map((_, i) => b.getChannelData(i));
-  for (let i = 0, o = 44; i < frames; i++) for (let ch = 0; ch < chans; ch++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, cd[ch][i])) * 0x7fff, true);
+  for (let i = skip, o = 44; i < b.length; i++) for (let ch = 0; ch < chans; ch++, o += 2) v.setInt16(o, Math.max(-1, Math.min(1, cd[ch][i])) * 0x7fff, true);
   return buf;
 }

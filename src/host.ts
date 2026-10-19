@@ -264,7 +264,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     // export (renders in the studio's browser)
     {
       name: "audio_export", scope: "edit",
-      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). Slow: about 1.6x the song's length, progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated).",
+      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). About 0.3x the song's length (slower if a Firefox tab renders it), progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated).",
       inputSchema: obj({ file: S, format: S, arrangement: S, pattern: S, overwrite: B }),
       run: async (a: any, c: Ctx) => {
         if (!h.render) throw new Error(NO_EXPORT);
