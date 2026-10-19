@@ -8,16 +8,21 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "sax"], keys: ["piano"], bass: ["sub"], pad: ["supersaw"], mallets: ["pluck", "bell"], drums: ["drums"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip"], horns: ["sax", "trumpet", "trombone"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright"], pad: ["supersaw"], mallets: ["pluck", "bell", "vibes"], drums: ["drums", "brushes"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
-const ONESHOT = new Set(["pluck", "bell", "drums"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
+const ONESHOT = new Set(["pluck", "bell", "drums", "brushes"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
 // Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft). The recording carries its own decay, so the envelope only
 // holds it and releases at the note's end. ponytail: no loop points, so a note longer than its recording just ends with it; add crossfade loops if long held sax notes matter
 const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?: number }> = {
   piano: { roots: span(21, 105), rel: 0.3, peak: 0.4 },
   sax: { roots: span(49, 79), rel: 0.12, peak: 0.45, wet: 0.25 },
+  upright: { roots: span(28, 67), rel: 0.08, peak: 0.65 }, // plucked: it decays on its own
+  vibes: { roots: span(48, 87), rel: 0.5, peak: 0.4, wet: 0.3 }, // a damped bar
+  trombone: { roots: span(40, 70), rel: 0.12, peak: 1.4, wet: 0.25 }, // brass is spikier than the sax, so peak-normalized files sit ~6 dB lower
+  trumpet: { roots: span(52, 85), rel: 0.12, peak: 0.9, wet: 0.25 },
 };
+const KITS = ["drums", "brushes"], RIDE = [51, 53].flatMap((k) => [`ride/${k}`, `ride/${k}-p`]); // both kits share one sampled ride: bow (51, 59) and bell (53), each mf and soft
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
 /** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks, a reverb send, shared noise. */
@@ -74,6 +79,26 @@ const SUSTAIN: Record<string, Sus> = {
     peak: 0.05, hold: 0.04, a: 0.012, rel: 0.32, pumped: true, wet: 0.35,
   },
   sub: { make: (r, f) => { const lp = filt(r, "lowpass", 420), a = osc(r, "sine", f), b = osc(r, "triangle", f); a.connect(lp); b.connect(lp); return chain([a, b], lp); }, peak: 0.2, hold: 0.18, a: 0.008, rel: 0.12, pumped: true },
+  epiano: {
+    make: (r, f, t) => { // FM Rhodes: a 1:1 modulator whose index falls (the bite), a bright partial, tremolo and a little auto-pan, and a slow decay while held
+      const car = osc(r, "sine", f), mod = osc(r, "sine", f), idx = gain(r, f * 2.5), hi = osc(r, "sine", f * 4), hg = hit(r, 0.08, t, 0.5, 0.002), dg = gain(r, 1), tr = gain(r, 0.9), lfo = osc(r, "sine", 4.5), td = gain(r, 0.1), pd = gain(r, 0.15), p = pan(r, 0);
+      idx.gain.setValueAtTime(f * 2.5, t); idx.gain.exponentialRampToValueAtTime(f * 0.15, t + 0.4); mod.connect(idx); idx.connect(car.frequency);
+      dg.gain.setValueAtTime(1, t); dg.gain.exponentialRampToValueAtTime(0.15, t + 5); car.connect(dg); hi.connect(hg); hg.connect(dg);
+      lfo.connect(td); td.connect(tr.gain); lfo.connect(pd); pd.connect(p.pan); dg.connect(tr); tr.connect(p);
+      return chain([car, mod, hi, lfo], p);
+    },
+    peak: 0.16, hold: 0.1, a: 0.004, rel: 0.25, wet: 0.2,
+  },
+  organ: {
+    make: (r, f, t) => { // Hammond drawbars (16' 5⅓' 8' 4' 2⅔' 2'), a key click, and a rotating speaker: slow auto-pan with a swell
+      const am = gain(r, 0.3), tr = gain(r, 1), lfo = osc(r, "sine", 0.8), pd = gain(r, 0.45), td = gain(r, 0.1), p = pan(r, 0), ck = r.c.createBufferSource(), hp = filt(r, "highpass", 2500), cg = hit(r, 0.25, t, 0.02, 0.001);
+      const oscs = [[0.5, 0.8], [1, 1], [1.5, 0.7], [2, 0.5], [3, 0.25], [4, 0.15]].map(([m, v]) => { const o = osc(r, "sine", f * m), g = gain(r, v); o.connect(g); g.connect(am); return o; });
+      ck.buffer = r.noise; ck.connect(hp); hp.connect(cg); cg.connect(p); ck.start(t); ck.stop(t + 0.03);
+      lfo.connect(pd); pd.connect(p.pan); lfo.connect(td); td.connect(tr.gain); am.connect(tr); tr.connect(p);
+      return chain([...oscs, lfo], p);
+    },
+    peak: 0.14, hold: 0.14, a: 0.008, rel: 0.06, wet: 0.15,
+  },
   chip: {
     make: (r, f, t) => { // an 8-bit lead with a little delayed vibrato
       const o = osc(r, "square", f), lfo = osc(r, "sine", 6), depth = gain(r, 0), lp = filt(r, "lowpass", 5200);
@@ -99,15 +124,16 @@ function fetchSample(c: BaseAudioContext, f: string) {
   if (!m.has(f)) { const e: { b?: AudioBuffer; p?: Promise<void> } = {}; m.set(f, e); e.p = fetch(`/ui/samples/${f}.mp3`, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then((a) => c.decodeAudioData(a)).then((b) => { e.b = b; }).catch(() => {}); }
   return m.get(f)!;
 }
-/** load every layer of the given sampled sounds on c; resolves to the files that failed. ponytail: all roots, both layers, even if a song uses few */
+/** load every layer of the given sampled sounds (and the ride, for a kit) on c; resolves to the files that failed. ponytail: all roots, both layers, even if a song uses few */
 async function loadSamples(c: BaseAudioContext, kinds: Iterable<string>) {
-  const es = [...new Set(kinds)].filter((k) => SAMPLED[k]).flatMap((k) => SAMPLED[k].roots.flatMap((r) => [false, true].map((soft) => sampleName(k, r, soft)))).map((f) => [f, fetchSample(c, f)] as const);
+  const ks = [...new Set(kinds)], fs = [...ks.filter((k) => SAMPLED[k]).flatMap((k) => SAMPLED[k].roots.flatMap((r) => [false, true].map((soft) => sampleName(k, r, soft)))), ...(ks.some((k) => KITS.includes(k)) ? RIDE : [])];
+  const es = fs.map((f) => [f, fetchSample(c, f)] as const);
   await Promise.all(es.map(([, e]) => e.p));
   return es.filter(([, e]) => !e.b).map(([f]) => f);
 }
 const want = new Set<string>();
-/** Live: the song uses these sounds (a channel's `sound`s; unknown and synth ones are ignored). Loads now, or once Play unlocks the audio. */
-export function preload(sounds: (string | undefined)[]) { for (const s of sounds) if (s && SAMPLED[s]) want.add(s); if (ac) loadSamples(ac, want); }
+/** Live: the song uses these sounds (a channel's `sound`s; unknown and synth ones are ignored, kits load the ride). Loads now, or once Play unlocks the audio. */
+export function preload(sounds: (string | undefined)[]) { for (const s of sounds) if (s && (SAMPLED[s] || KITS.includes(s))) want.add(s); if (ac) loadSamples(ac, want); }
 /** one sampled note: the nearest recorded root, repitched; null if its buffer isn't loaded (yet) */
 function sampled(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number) {
   const s = SAMPLED[kind], lo = s.roots[0], hi = s.roots[s.roots.length - 1];
@@ -128,9 +154,9 @@ const release = (v: { g: GainNode; oscs: AudioScheduledSourceNode[]; rel: number
   else { g.cancelScheduledValues(Math.max(now, at)); g.setValueAtTime(Math.max(0.0001, g.value), Math.max(now, at)); } // ponytail: older engines jump to the current level
   g.exponentialRampToValueAtTime(0.0001, at + v.rel); v.oscs.forEach((x) => x.stop(at + v.rel + 0.05));
 };
-/** play one note of any instrument at time t on rig r; sustained and sampled kinds are returned for release, one-shots handle themselves. vel only matters to sampled ones */
+/** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones and the ride */
 function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5) {
-  if (kind === "drums") { drum(r, key, t, lvl); return null; }
+  if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind === "brushes");
   if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : bell)(r, hz(key), t, lvl); return null; }
   if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel);
   return sustain(r, kind, key, t, lvl);
@@ -159,7 +185,7 @@ export function voiceStart(id: string, key: number, plugin: string, o: VoiceSoun
   if (!ONESHOT.has(kind) && tones.size >= MAX) return;
   const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel);
   stats.started++;
-  if (!v) { stats.stopped++; if (kind === "drums" && (key === 35 || key === 36)) stats.kicks++; return; }
+  if (!v) { stats.stopped++; if (KITS.includes(kind) && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
 }
 /** The voice ended: release at the note's end if it hasn't come yet. failed: plus a dissonant blip. */
@@ -185,24 +211,58 @@ function bell(r: Rig, f: number, t: number, lvl: number) {
   mod.connect(idx); idx.connect(car.frequency); car.connect(g); g.connect(r.pump); send(r, g, 0.4);
   for (const o of [car, mod]) { o.start(t); o.stop(t + 1.6); }
 }
-/** General MIDI-ish kit: 35/36 kick, 38/40 snare, 39 clap, 42/44 closed hat, 46 open hat, 49/57 crash; anything else is a rim click */
-function drum(r: Rig, key: number, t: number, lvl: number) {
-  const n = (f: BiquadFilterNode, peak: number, dur: number, at = t, wet = 0) => {
-    const s = r.c.createBufferSource(), g = hit(r, peak * lvl, at, dur, 0.001); s.buffer = r.noise; s.connect(f); f.connect(g); g.connect(r.out); if (wet) send(r, g, wet); s.start(at); s.stop(at + dur + 0.02);
-  };
+/** the sampled ride (bow or bell, soft under vel 0.4), rung out whole; skipped until its buffer has loaded. ponytail: no choke, so 16th-note ride patterns pile up */
+function ride(r: Rig, key: number, t: number, lvl: number, vel: number) {
+  const b = bank.get(r.c)?.get(`ride/${key}${vel < 0.4 ? "-p" : ""}`)?.b;
+  if (!b) return;
+  const src = r.c.createBufferSource(), g = gain(r, 1.4 * lvl * (0.5 + vel)); // the files are loudness-matched (scripts/samples.mjs), not peak-normalized
+  src.buffer = b; src.connect(g); g.connect(r.out); send(r, g, 0.15); src.start(t);
+}
+const TOMS: Record<number, number> = { 41: 82, 43: 102, 45: 125, 47: 152, 48: 185, 50: 225 }; // low floor tom up to high tom, Hz
+/** General MIDI-ish kit: 35/36 kick, 37 side stick, 38/40 snare, 39 clap, 41-50 toms, 42/44 closed hat, 46 open hat, 49/57 crash, 51/59 ride bow, 53 ride bell,
+ *  54 tambourine, 56 cowbell, 70 maracas, 75 claves; anything else is a rim click. `soft` is the brushes kit: a soft round kick, 38 a slap, and 40 a swirl that swells
+ *  in and lasts until released (the returned voice); the rest is shared. */
+function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, soft = false) {
+  const n = (f: BiquadFilterNode, peak: number, dur: number, at = t, wet = 0, a = 0.001) => {
+    const s = r.c.createBufferSource(), g = hit(r, peak * lvl, at, dur, a); s.buffer = r.noise; s.connect(f); f.connect(g); g.connect(r.out); if (wet) send(r, g, wet); s.start(at); s.stop(at + dur + 0.02);
+  }, tone = (type: OscillatorType, f: number, peak: number, dur: number) => { const o = osc(r, type, f), g = hit(r, peak * lvl, t, dur, 0.001); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + dur + 0.03); };
   if (key === 35 || key === 36) {
-    const o = osc(r, "sine", 160), g = hit(r, 0.9 * lvl, t, 0.38, 0.002);
+    const o = osc(r, "sine", 160), g = hit(r, (soft ? 0.55 : 0.9) * lvl, t, 0.38, 0.002);
     o.frequency.setValueAtTime(160, t); o.frequency.exponentialRampToValueAtTime(42, t + 0.13); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.42);
-    n(filt(r, "highpass", 3000), 0.12, 0.012); // the click of the beater
+    if (!soft) n(filt(r, "highpass", 3000), 0.12, 0.012); // the click of the beater
     const p = r.pump.gain; p.cancelScheduledValues(t); p.setValueAtTime(1, t); p.linearRampToValueAtTime(0.28, t + 0.012); p.setTargetAtTime(1, t + 0.04, 0.09);
+  } else if (soft && key === 40) { // the swirl: bandpassed noise, a slow wobble in the band, swelling in
+    const s = r.c.createBufferSource(), bp = filt(r, "bandpass", 2400, 0.5), lfo = osc(r, "sine", 1.7), ld = gain(r, 700), g = gain(r, 0.0001);
+    s.buffer = r.noise; s.loop = true; lfo.connect(ld); ld.connect(bp.frequency); s.connect(bp); bp.connect(g); g.connect(r.out); send(r, g, 0.2);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, 0.3 * lvl), t + 0.3);
+    s.start(t); lfo.start(t);
+    return { g, oscs: [s, lfo] as AudioScheduledSourceNode[], rel: 0.15 };
   } else if (key === 38 || key === 40) {
-    n(filt(r, "bandpass", 1800, 0.8), 0.5, 0.19, t, 0.2);
-    const o = osc(r, "triangle", 190), g = hit(r, 0.28 * lvl, t, 0.11, 0.002); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.14);
-  } else if (key === 39) for (const d of [0, 0.011, 0.022]) n(filt(r, "bandpass", 1300, 1.2), 0.45, d === 0.022 ? 0.16 : 0.012, t + d, d === 0.022 ? 0.3 : 0);
-  else if (key === 42 || key === 44) n(filt(r, "highpass", 7500), 0.22, 0.05);
-  else if (key === 46) n(filt(r, "highpass", 6500), 0.2, 0.3);
+    if (soft) { n(filt(r, "bandpass", 1100, 0.6), 0.4, 0.2, t, 0.2, 0.008); n(filt(r, "highpass", 4500), 0.1, 0.15, t + 0.02, 0.1, 0.03); } // the slap, then the swish
+    else {
+      n(filt(r, "bandpass", 1800, 0.8), 0.5, 0.19, t, 0.2);
+      tone("triangle", 190, 0.28, 0.11);
+    }
+  } else if (key === 37) { tone("triangle", 330, 0.25, 0.04); n(filt(r, "bandpass", 2000, 1.5), 0.3, 0.03); }
+  else if (key === 39) for (const d of [0, 0.011, 0.022]) n(filt(r, "bandpass", 1300, 1.2), 0.45, d === 0.022 ? 0.16 : 0.012, t + d, d === 0.022 ? 0.3 : 0);
+  else if (TOMS[key]) { // a sine with a fast pitch drop plus a little noise; the lower the tom, the longer it rings
+    const f = TOMS[key], o = osc(r, "sine", f * 1.7), g = hit(r, 0.6 * lvl, t, 0.5 - f / 800, 0.002);
+    o.frequency.setValueAtTime(f * 1.7, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.07); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.5);
+    n(filt(r, "bandpass", f * 6, 1), 0.12, 0.04);
+  }
+  else if (key === 42 || key === 44) n(filt(r, "highpass", 7500), soft ? 0.15 : 0.22, 0.05);
+  else if (key === 46) n(filt(r, "highpass", 6500), soft ? 0.14 : 0.2, 0.3);
   else if (key === 49 || key === 57) n(filt(r, "highpass", 4200), 0.26, 1.3, t, 0.3);
+  else if (key === 51 || key === 53 || key === 59) ride(r, key === 53 ? 53 : 51, t, lvl, vel);
+  else if (key === 54) n(filt(r, "bandpass", 8500, 0.9), 0.22, 0.14, t, 0.1);
+  else if (key === 56) { // 808 cowbell: two squares, bandpassed, short
+    const b = filt(r, "bandpass", 700, 1), g = hit(r, 0.12 * lvl, t, 0.3, 0.001); b.connect(g); g.connect(r.out);
+    for (const f of [540, 800]) { const o = osc(r, "square", f); o.connect(b); o.start(t); o.stop(t + 0.33); }
+  }
+  else if (key === 70) n(filt(r, "bandpass", 6500, 1), 0.2, 0.06, t, 0, 0.012);
+  else if (key === 75) tone("sine", 2400, 0.3, 0.06);
   else n(filt(r, "bandpass", 2600, 3), 0.25, 0.03);
+  return null;
 }
 
 function ping(freqs: number[], type: OscillatorType, peak: number, dur: number, at = 0) {

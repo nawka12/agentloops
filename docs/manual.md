@@ -167,17 +167,26 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 - **Length:** a note rings for its `len` at `clock.bpm`, or longer while its agent is still running. 24 ticks is a 16th step, 96 a beat, and 384 a bar.
 - **Chords:** stack notes at the same `start`. Raise the channel's `polyphony` (default 4) to at least the chord size.
 - **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
-  - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato).
+  - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato); `epiano` (an FM Rhodes: a bright bite on the attack, tremolo, and a slow fade over a few seconds while held); `organ` (Hammond drawbars with a key click and a rotating-speaker wobble; it sustains at full level).
   - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
-  - **Sampled:** `piano` (a grand piano, keys 21–108) and `sax` (an alto sax, keys 49–79). Real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness. A piano note rings out on its own and fades at the note's end; a sax note is one recording of 2.5–4 s, so a longer note ends early.
+  - **Sampled:** real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness.
+    - `piano` (a grand piano, keys 21–108) rings out on its own and fades at the note's end.
+    - `sax` (an alto sax, keys 49–79), `trumpet` (keys 52–85) and `trombone` (keys 40–70, the low horn) are each one recording of a few seconds, so a longer note ends early.
+    - `upright` (a plucked double bass, keys 28–67) decays on its own, so a long note just fades.
+    - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
     - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
+    - 37 side stick
     - 38/40 snare
     - 39 clap
+    - 41/43/45/47/48/50 toms, low floor tom up to high tom
     - 42/44 closed hat
     - 46 open hat
     - 49/57 crash
+    - 51/59 ride bow and 53 ride bell: a sampled ride cymbal that rings out whole; `vel` below 0.4 is the soft hit
+    - 54 tambourine, 56 cowbell, 70 maracas, 75 claves
     - anything else plays a rim click
+  - **`brushes`, the same keys for ballads:** a soft round kick (35/36, still ducks the pump), a brush slap on 38, and on 40 a brush swirl that swells in and lasts the note's length, so one note held for the bar sweeps it. Hats are a touch softer; the rest is shared with `drums`.
 - **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
 - **Structure:**
   - Write one pattern per section (intro, verse, build, drop, break, outro), each typically `lengthSteps: 64` (4 bars), and place them as clips in the arrangement.
@@ -193,11 +202,12 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Half-time drums (kick on 1 and on the "and" of 3, snare and clap on beat 3, hats on 8ths).
   - Builds: a snare roll from quarters to 8ths to 16ths to 32nds, a riser, then a beat of silence before the drop.
   - Kawaii bass sits at 150–170 BPM.
-- **Jazz** (`piano`, `sax`, a `sub` bass, `drums`):
+- **Jazz** (`piano` or `epiano`, `sax`, `trumpet`, `trombone`, `vibes`, an `upright` bass, `drums` or `brushes`):
   - Swing: write 8th notes at ticks 0 and 64 of each beat (96 ticks per beat).
   - ii–V–I with rootless 9th/13th voicings (in C: Dm9 → G13 → Cmaj9).
-  - Walking bass on quarter notes.
-  - The ride pattern "ding ding-a ding" goes on the closed hat (42): every beat, plus the swung "and" (tick 64) of 2 and 4. The kit has no ride cymbal yet (51 plays a rim click), and 44 sounds the same as 42.
+  - Walking bass on quarter notes; `upright` covers keys 28–67.
+  - The ride pattern "ding ding-a ding" goes on the ride (51): every beat, plus the swung "and" (tick 64) of 2 and 4, with the hat (44) on 2 and 4. Use 53 for the bell.
+  - `brushes` for ballads: a swirl on 40 held for the bar, a slap on 38 on 2 and 4.
   - Comp on the "and" of 2 and 4.
 - **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
 - **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:

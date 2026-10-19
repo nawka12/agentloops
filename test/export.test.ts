@@ -178,8 +178,8 @@ test("audio_export with no tab renders in headless Chromium", { skip: chromium ?
 
 test("every sound renders: not silent, level within 10 dB of triangle", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
   // ponytail: ±10 dB, not 6: today's `sub` sits at +7 dB and `pluck` at -9 dB of triangle (a decaying note over a 2 s bar). Retune those, then tighten
-  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums)
-  const key = (x: string) => (x === "drums" ? 36 : 60);
+  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a ride for brushes)
+  const key = (x: string) => (x === "drums" ? 36 : x === "brushes" ? 51 : 60);
   const { file, s } = await setup({
     format: "agentloops/1", name: "Sounds", clock: { bpm: 120 },
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: key(x), name: "n", template: "x" }] })),
@@ -203,7 +203,7 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
   } finally { await m.client.close(); await s.close(); }
 });
 
-test("/api/connect writes the harness files once, and gives a snippet where there is no project-local config", async () => {
+test("/api/connect writes the harness files, skips existing ones, and gives a snippet where there is no project-local config", async () => {
   const { dir, s, post } = await setup();
   try {
     const a = await post("/api/connect", { harness: "claude-code" });
@@ -218,8 +218,14 @@ test("/api/connect writes the harness files once, and gives a snippet where ther
     assert.match(readFileSync(join(dir, ".claude/skills/agentloops/SKILL.md"), "utf8"), /^---\nname: agentloops/);
 
     const b = await post("/api/connect", { harness: "claude-code" });
-    assert.deepEqual([b.body.wrote, b.body.skipped], [[], [".mcp.json", ".claude/skills/agentloops/SKILL.md"]]);
+    assert.deepEqual([b.body.wrote, b.body.skipped], [[".claude/skills/agentloops/SKILL.md"], [".mcp.json"]]);
     assert.match(b.body.snippet, /\.mcp\.json already exists/); // a skipped config comes back as a snippet to merge
+
+    writeFileSync(join(dir, ".claude/skills/agentloops/SKILL.md"), "stale"); // the MCP server refreshes a stale skill at startup
+    const m = await mcp(join(dir, "kawaii-bass.alp.json"));
+    await m.call("project_get", { summary: true });
+    await m.client.close();
+    assert.match(readFileSync(join(dir, ".claude/skills/agentloops/SKILL.md"), "utf8"), /^---\nname: agentloops/);
 
     const o = (await post("/api/connect", { harness: "other" })).body;
     assert.deepEqual(o.wrote, ["AGENTS.md"]);

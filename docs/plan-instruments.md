@@ -1,6 +1,6 @@
 # Plan: more instruments
 
-Status: planned 2026-10-18. Slice A in progress on branch `slice-8-instruments` (2026-10-19).
+Status: planned 2026-10-18. Slice A merged 2026-10-19. Slice B in progress on branch `slice-9-jazz-band` (2026-10-19).
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
 
@@ -92,11 +92,25 @@ Attribution goes in `ui/samples/NOTICE`, with a line in the README.
 
 ### B: the rest of the jazz band
 
-- [ ] Sampled (Iowa): `upright` (plucked double bass), `vibes` (vibraphone), and `trumpet` if Iowa has a usable muted one
-- [ ] Synth `brushes` kit: GM keys like `drums`, but brush slap on 38, a sustained brush swirl on 40 and a soft kick
-- [ ] Ride for `drums` and `brushes` on 51/59: metallic squares at 808 cymbal ratios through a highpass
-- [ ] Synth `epiano`: FM Rhodes, a bright bite on the attack that fades, plus tremolo
-- [ ] Synth `organ`: Hammond drawbars, sines at 1×, 2×, 3×, 4×, with a key click and a slow stereo wobble like a rotating speaker
+Scope as decided on 2026-10-19 (see [Decided before slice B](#decided-before-slice-b-2026-10-19)):
+
+- [x] Sampled (Iowa), mf plus a pp soft layer, one root every 3 semitones:
+  - `upright`: plucked double bass, roots 28–67 (E1–G4)
+  - `vibes`: vibraphone, sustain pedal, roots 48–87 (C3–Eb6)
+  - `trombone`: tenor trombone, roots 40–70 (E2–Bb4), the low horn
+  - `trumpet`: open Bb trumpet with vibrato, roots 52–85 (E3–C#6)
+- [x] Ride for `drums` and `brushes`, sampled from Iowa's 21" ride: 51/59 the bow, 53 the bell (vel < 0.4 the pp hit)
+- [x] GM keys for both kits, pulled forward from C: 37 side stick, 41/43/45/47/48/50 toms, 54 tambourine, 56 cowbell, 70 maracas, 75 claves
+- [x] Synth `brushes` kit: GM keys like `drums`, but brush slap on 38, a brush swirl on 40 that lasts the note's length, and a soft kick
+- [x] Synth `epiano`: FM Rhodes, a bright bite on the attack that fades, plus tremolo
+- [x] Synth `organ`: Hammond drawbars, with a key click and a slow stereo wobble like a rotating speaker
+- [x] A `horns` family (sax, trumpet, trombone) in the dropdown
+- [x] SKILL.md refresh: `init`/connect rewrites the agentloops-owned SKILL.md, and the MCP server refreshes an existing one on startup
+- [x] Manual: a line per new sound (key range, what vel does, long notes), the ride in the jazz tips
+- [x] Export test covers the new sounds
+- [x] You listen in the studio (approved 2026-10-19)
+
+As built: the ride is loudness-normalized (mean -40 dB), not peak-normalized: the stick click set the mf hit's peak, so the pp hit came out 10 dB louder. Brass is spikier than the sax, so `trumpet` and `trombone` have higher `peak`s in `SAMPLED`. The Iowa pp vibes C6–F6 file has no C#6, and the vibes sit about 10 cents sharp (left as recorded). Upright and vibes splits need per-file silence levels and a highpass on the whole recording (`fix`, `hp` in `scripts/samples.mjs`). Iowa downloads ran at ~25 KB/s from the laptop; the friend machine fetched the vibes at ~0.5 MB/s.
 
 ### C: the earlier synth list
 
@@ -146,6 +160,13 @@ As built: piano roots stop at 105 (Salamander's C8 sample measures ~+125 cents s
 1. **Piano:** Salamander (warmer, needs attribution; recommended) or Iowa (drier, no restrictions)?
 2. **Sax:** is alto OK? I found no free tenor with a clear license.
 3. **Package size:** about 10 MB of MP3s in the npm package once A and B are done. OK, or should samples download on first use instead? That's more code and needs a network connection.
+
+## Decided before slice B (2026-10-19)
+
+- **Ride:** sampled (Iowa 21" ride, stick on the bow and the bell) instead of the planned synth ride.
+- **Horns:** Iowa has no muted trumpet. Both the open trumpet and the tenor trombone join B.
+- **Song-agent items:** the SKILL.md refresh joins B. Vocal chops, sax loop points and channel pan/reverb wait for a later slice.
+- Iowa has no brushes or toms, so those stay synthesized.
 
 ## Not in this plan
 

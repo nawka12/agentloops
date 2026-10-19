@@ -1,8 +1,8 @@
 // "Connect a harness": the project-local files that let a coding agent drive this song over the Studio MCP.
-// Used by `agentloops init --harness <id>` and the studio's POST /api/connect. Existing files are skipped, never overwritten.
+// Used by `agentloops init --harness <id>` and the studio's POST /api/connect. Existing files are skipped, except the AgentLoops SKILL.md, which is always rewritten.
 // Formats checked against each harness's docs: claude-code .mcp.json (code.claude.com/docs/en/mcp), codex .codex/config.toml (trusted projects only;
 // developers.openai.com/codex/config-reference), cursor .cursor/mcp.json (cursor.com/docs/mcp), opencode opencode.json (opencode.ai/docs/mcp-servers).
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { MANUAL } from "./project.ts";
@@ -16,6 +16,8 @@ export const HARNESSES = [
 ];
 
 const SKILL_DESC = "Use when the user asks to make, build, edit, run or debug an AgentLoops song or project (an .alp.json file): a multi-agent pipeline of channels, patterns, buses and loops. Teaches the project format, the Studio MCP tools and the authoring loop.";
+const SKILL = ".claude/skills/agentloops/SKILL.md"; // owned by AgentLoops: rewritten on every connect and on serve
+const skill = () => `---\nname: agentloops\ndescription: ${JSON.stringify(SKILL_DESC)}\n---\n\n${MANUAL}`;
 const CLI = fileURLToPath(new URL("./cli.ts", import.meta.url)); // absolute path: no global install needed (dist/cli.js once built)
 const NODE = process.execPath; // the node running us: a harness may have an older one on PATH
 
@@ -31,7 +33,7 @@ export function harnessFiles(dir: string, harness: string, songFile: string) {
   const mcpJson: [string, string, string] = [".mcp.json", json({ mcpServers: { agentloops: { command: NODE, args } } }), ""];
   const entries: Record<string, { files: [string, string, string?][]; next: string; snippet?: string }> = {
     "claude-code": {
-      files: [mcpJson, [".claude/skills/agentloops/SKILL.md", `---\nname: agentloops\ndescription: ${JSON.stringify(SKILL_DESC)}\n---\n\n${MANUAL}`]],
+      files: [mcpJson, [SKILL, skill()]],
       next: `run \`claude\` in ${dir} (approve the agentloops MCP server when asked)`,
     },
     codex: {
@@ -58,10 +60,18 @@ export function harnessFiles(dir: string, harness: string, songFile: string) {
   let snippet = e.snippet;
   for (const [rel, body, snip] of e.files) {
     const path = join(dir, rel);
-    if (existsSync(path)) { skipped.push(rel); if (snip !== undefined) snippet = `${rel} already exists; add this to it yourself:\n\n${body}`; continue; }
+    if (existsSync(path) && rel !== SKILL) { skipped.push(rel); if (snip !== undefined) snippet = `${rel} already exists; add this to it yourself:\n\n${body}`; continue; }
     mkdirSync(dirname(path), { recursive: true });
     writeFileSync(path, body);
     wrote.push(rel);
   }
   return { wrote, skipped, next: e.next, ...(snippet ? { snippet } : {}) };
+}
+
+/** Rewrite a song's stale SKILL.md (an older AgentLoops wrote it). Returns true if it rewrote it. */
+export function refreshSkill(dir: string): boolean {
+  const path = join(dir, SKILL);
+  if (!existsSync(path) || readFileSync(path, "utf8") === skill()) return false;
+  writeFileSync(path, skill());
+  return true;
 }

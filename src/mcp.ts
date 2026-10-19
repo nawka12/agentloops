@@ -5,6 +5,7 @@ import { dirname, resolve } from "node:path";
 import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { CallToolRequestSchema, ListResourcesRequestSchema, ListToolsRequestSchema, ReadResourceRequestSchema } from "@modelcontextprotocol/sdk/types.js";
+import { refreshSkill } from "./connect.ts";
 import { createHost, RANK, type Ctx } from "./host.ts";
 import { MANUAL } from "./project.ts";
 import { findStudio, studioFile } from "./sync.ts";
@@ -28,6 +29,7 @@ If a studio is open, studio_status says so and your calls are shared with it. Af
 
 export async function serve(o: { project?: string; scope: keyof typeof RANK; budget?: number }) {
   const host = createHost({ scope: o.scope, budget: o.budget });
+  if (o.project) try { refreshSkill(dirname(resolve(o.project))); } catch {} // stale skill after an upgrade; never blocks startup
   if (o.project) try { host.open(o.project); } catch (e: any) { console.error(`agentloops mcp: cannot open ${o.project}: ${e.message}`); }
   const allowed = host.tools.filter((t) => RANK[t.scope as keyof typeof RANK] <= RANK[o.scope]);
   const LOCAL = new Set(["project_create", "project_open"]); // these pick which file THIS process works on; a studio's file is fixed

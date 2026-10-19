@@ -13,4 +13,34 @@ sax/    Eb alto saxophone with vibrato, University of Iowa Electronic Music Stud
         Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
         faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
 
+upright/ plucked double bass (pizzicato, E, A, D and G strings), University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed to 4 s,
+        faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+vibes/  vibraphone (sustain pedal), University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed to 6 s,
+        faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+trombone/ tenor trombone, University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
+        retuned to equal temperament, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+trumpet/ Bb trumpet with vibrato, University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
+        retuned to equal temperament, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+ride/   21-inch ride cymbal, stick (bow and bell hits), University of Iowa Electronic Music Studios,
+        Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: one hit each of the bow and the bell at mf and pp split from the recordings,
+        trimmed to 4 s, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
 The MP3s are rebuilt from the original recordings by scripts/samples.mjs.
