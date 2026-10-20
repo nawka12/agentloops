@@ -1,9 +1,8 @@
 #!/usr/bin/env -S node --disable-warning=ExperimentalWarning
 import { spawn, spawnSync } from "node:child_process";
-import { createHash } from "node:crypto";
 import { accessSync, constants, copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { delimiter, join, resolve } from "node:path";
+import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { harnessFiles, HARNESSES } from "./connect.ts";
@@ -17,7 +16,8 @@ const USAGE = `usage:
   agentloops mcp [--project <file>] [--scope read|edit|run] [--budget <usd>]   (Studio MCP server on stdio)
   agentloops init [dir] [--harness claude-code|codex|cursor|opencode|other]
   agentloops studio [file] [--port 4870] [--browser] [--no-open]   (local web UI on 127.0.0.1)
-      opens in its own app window (Chromium family; AGENTLOOPS_BROWSER=<path> picks one) and quits when the window closes;
+      opens in an app window in your default browser if it is Chromium-family (else the first Chromium-family one on PATH; AGENTLOOPS_BROWSER=<path> picks one)
+      and quits a few seconds after the window closes;
       --browser uses the default browser instead (quit with Ctrl+C); no file opens the first song in ~/AgentLoops
   agentloops install   (Linux: app-menu entry, icon and *.alp.json file type under $XDG_DATA_HOME)`;
 
@@ -109,31 +109,31 @@ const MAC_APPS = ["Google Chrome", "Chromium", "Brave Browser", "Microsoft Edge"
 export function onPath(cmd: string, path = process.env.PATH ?? ""): string | undefined {
   for (const d of path.split(delimiter)) { const f = join(d, cmd); try { accessSync(f, constants.X_OK); return f; } catch {} }
 }
-/** A Chromium-family browser for the app window: $AGENTLOOPS_BROWSER, else PATH (Linux), else /Applications (macOS). `which` and `exists` are injectable for tests. */
-export function findBrowser(which: (cmd: string) => string | undefined = onPath, env = process.env, platform = process.platform, exists = existsSync): string | undefined {
+/** Linux default browser's desktop id (e.g. google-chrome.desktop), from xdg-settings; undefined elsewhere or on error */
+export function defaultBrowser(): string | undefined {
+  if (process.platform !== "linux") return;
+  try { return spawnSync("xdg-settings", ["get", "default-web-browser"], { encoding: "utf8" }).stdout.trim() || undefined; } catch { return; }
+}
+/** A Chromium-family browser for the app window: $AGENTLOOPS_BROWSER, else the default browser if Chromium-family (Linux), else /Applications (macOS), else PATH. `which`, `exists` and `dflt` are injectable for tests. */
+export function findBrowser(which: (cmd: string) => string | undefined = onPath, env = process.env, platform = process.platform, exists = existsSync, dflt: () => string | undefined = defaultBrowser): string | undefined {
   if (env.AGENTLOOPS_BROWSER) return env.AGENTLOOPS_BROWSER;
   if (platform === "darwin") return MAC_APPS.map((a) => `/Applications/${a}.app/Contents/MacOS/${a}`).find((f) => exists(f));
+  const d = platform === "linux" ? dflt() : undefined; // flatpak exports and native packages both put the binary on PATH under its desktop id
+  if (d && /chrom|brave|edge|vivaldi/i.test(d)) { const f = which(d.replace(/\.desktop$/, "")); if (f) return f; }
   for (const b of BROWSERS) { const f = which(b); if (f) return f; }
 }
-/** the window's own profile dir (one per song), so its process lives exactly as long as the window */
-const windowProfile = (file: string, env = process.env) => join(env.XDG_CACHE_HOME || join(homedir(), ".cache"), "agentloops", "window", createHash("sha1").update(resolve(file)).digest("hex").slice(0, 12));
 
 function openDefault(url: string) {
   const [cmd, ...args] = process.platform === "darwin" ? ["open", url] : process.platform === "win32" ? ["cmd", "/c", "start", "", url] : ["xdg-open", url];
   spawn(cmd, args, { stdio: "ignore", detached: true }).on("error", () => {}).unref();
 }
-/** App window if a Chromium turns up (the studio quits when it closes), else the default browser. */
-function openWindow(url: string, file: string, browserFlag?: boolean) {
+/** App window in a running Chromium if one turns up (returns true), else the default browser (false). */
+function openWindow(url: string, browserFlag?: boolean): boolean {
   const exe = browserFlag ? undefined : findBrowser();
-  if (!exe) return openDefault(url);
-  const args = [`--app=${url}`, `--user-data-dir=${windowProfile(file)}`, "--no-first-run", "--no-default-browser-check", "--class=AgentLoops"];
-  // a browser that exits within seconds handed the window to another process (a second studio on this song, a launcher script):
-  // the window's lifetime is unknown then, so the studio stays up until Ctrl+C
-  const t0 = Date.now();
-  spawn(exe, args, { stdio: "ignore" }).on("error", () => openDefault(url)).on("exit", () => {
-    if (Date.now() - t0 < 3000) return console.error("agentloops studio: the window belongs to another browser process; Ctrl+C to quit");
-    console.error("agentloops studio: window closed, quitting"); process.exit(0);
-  });
+  if (!exe) { openDefault(url); return false; }
+  // detached: if this starts the browser cold, Ctrl+C on the studio must not take the user's whole browser down with it
+  spawn(exe, [`--app=${url}`, "--no-first-run", "--no-default-browser-check", "--class=AgentLoops"], { stdio: "ignore", detached: true }).on("error", () => openDefault(url)).unref();
+  return true; // the browser usually hands the window to its running process and exits at once
 }
 
 /** the first song in ~/AgentLoops; the folder is made the way `init` makes it when it has none */
@@ -202,10 +202,11 @@ async function main() {
   const file = cmd === "studio" ? positionals[0] ?? homeSong() : positionals[0];
   if (cmd === "studio") {
     const { studio } = await import("./studio.ts");
-    const s = await studio({ file, port: values.port ? Number(values.port) : 4870 });
+    let appWindow = false; // set once openWindow has launched an app window; only then does closing the window quit
+    const s = await studio({ file, port: values.port ? Number(values.port) : 4870, onClosed: () => { if (appWindow) { console.error("agentloops studio: window closed, quitting"); process.exit(0); } } });
     for (const sig of ["SIGINT", "SIGTERM"]) process.on(sig, () => process.exit(0)); // the exit handler removes .agentloops/studio.json
     console.error(`agentloops studio: ${s.url}  (Ctrl+C to quit)`);
-    if (!values["no-open"]) openWindow(s.url, file, values.browser);
+    if (!values["no-open"]) appWindow = openWindow(s.url, values.browser);
     return;
   }
   if (!["validate", "render", "score"].includes(cmd) || !file) { console.error(USAGE); process.exit(2); }

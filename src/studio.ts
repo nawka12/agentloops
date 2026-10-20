@@ -24,12 +24,13 @@ const SONG = /^[\w.-]+\.alp\.json$/;
 const songs = (d: string) => readdirSync(d).filter((f) => SONG.test(f)).sort().map((f) => { let name = f; try { name = JSON.parse(readFileSync(resolve(d, f), "utf8")).name ?? f; } catch {} return { file: f, name }; });
 const presets = () => readdirSync(PRESETS).filter((f) => f.endsWith(".json")).sort().map((f) => ({ id: f.slice(0, -5), ...JSON.parse(readFileSync(new URL(f, PRESETS), "utf8")) }));
 
-export async function studio(o: { file: string; port?: number }) {
+export async function studio(o: { file: string; port?: number; onClosed?: () => void; graceMs?: number }) {
   let file = resolve(o.file);
   const dir = dirname(file), log = eventsFile(dir);
   mkdirSync(dirname(log), { recursive: true });
   if (!existsSync(file)) writeJson(file, starter(basename(file).replace(/\.alp\.json$|\.json$/, ""))); // `studio <new-file>` starts a song instead of erroring
   const clients = new Set<ServerResponse>();
+  let gone: ReturnType<typeof setTimeout> | undefined; // the grace timer armed when the last tab leaves
   const sse = (type: string, data: any) => `event: ${type}\ndata: ${JSON.stringify(data)}\n\n`;
   const send = (type: string, data: any) => { const msg = sse(type, data); for (const c of clients) c.write(msg); };
   // The studio owns the project: its UI actions and every relayed MCP call go through this host (one undo stack, one set of runs).
@@ -120,7 +121,9 @@ export async function studio(o: { file: string; port?: number }) {
     "GET /api/state": (_q, res) => json(res, 200, { ...state(), events: recent() }),
     "GET /api/events": (req, res) => {
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
-      res.write(": hi\n\n"); clients.add(res); req.on("close", () => clients.delete(res));
+      res.write(": hi\n\n"); clients.add(res); clearTimeout(gone);
+      // ponytail: a page reload slower than graceMs, or the browser dropping the window, quits the studio
+      req.on("close", () => { clients.delete(res); if (!clients.size && o.onClosed) gone = setTimeout(o.onClosed, o.graceMs ?? 5000); });
     },
     // the score as written, for audio export: every note at its absolute tick. Mute/solo apply; `when`/`pass` conditions and loops
     // are not evaluated (the score plays once, as notated). ponytail: evaluate conditions by bouncing a take when songs need it
@@ -273,7 +276,7 @@ export async function studio(o: { file: string; port?: number }) {
   return {
     url: host.studioUrl, port,
     async close() {
-      clearInterval(ping); w1.close(); w2.close(); clearTimeout(t1); clearTimeout(t2); unpublish(); process.off("exit", unpublish);
+      clearInterval(ping); clearTimeout(gone); w1.close(); w2.close(); clearTimeout(t1); clearTimeout(t2); unpublish(); process.off("exit", unpublish);
       await Promise.all([...host.runs.values()].map((r) => (r.ac.abort(), r.promise))); // a run waiting on a harness would never end by itself
        for (const c of clients) c.end(); server.closeAllConnections(); await new Promise((ok) => server.close(ok));
     },

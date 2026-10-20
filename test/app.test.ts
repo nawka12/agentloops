@@ -27,13 +27,34 @@ test("the manifest and icon are served with their types, behind the Origin guard
   } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
-test("findBrowser: env override, PATH order, macOS apps, none", () => {
+test("findBrowser: env override, default browser, PATH order, macOS apps, none", () => {
   const has = (...names: string[]) => (c: string) => (names.includes(c) ? `/bin/${c}` : undefined);
-  assert.equal(findBrowser(has("chromium"), { AGENTLOOPS_BROWSER: "/opt/mine" }, "linux"), "/opt/mine");
-  assert.equal(findBrowser(has("google-chrome", "brave-browser", "chromium-browser"), {}, "linux"), "/bin/chromium-browser");
-  assert.equal(findBrowser(has("microsoft-edge", "google-chrome-stable"), {}, "linux"), "/bin/google-chrome-stable");
-  assert.equal(findBrowser(has(), {}, "linux"), undefined);
-  assert.equal(findBrowser(has("chromium"), {}, "darwin", (f) => f === "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser"), "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser");
+  const none = () => undefined, vivaldi = () => "com.vivaldi.Vivaldi.desktop";
+  assert.equal(findBrowser(has("chromium"), { AGENTLOOPS_BROWSER: "/opt/mine" }, "linux", undefined, none), "/opt/mine");
+  assert.equal(findBrowser(has("google-chrome", "brave-browser", "chromium-browser"), {}, "linux", undefined, none), "/bin/chromium-browser");
+  assert.equal(findBrowser(has("microsoft-edge", "google-chrome-stable"), {}, "linux", undefined, none), "/bin/google-chrome-stable");
+  assert.equal(findBrowser(has(), {}, "linux", undefined, none), undefined);
+  assert.equal(findBrowser(has("com.vivaldi.Vivaldi", "chromium"), {}, "linux", undefined, vivaldi), "/bin/com.vivaldi.Vivaldi");
+  assert.equal(findBrowser(has("chromium"), {}, "linux", undefined, () => "firefox.desktop"), "/bin/chromium");
+  assert.equal(findBrowser(has("chromium"), { AGENTLOOPS_BROWSER: "/opt/mine" }, "linux", undefined, vivaldi), "/opt/mine");
+  assert.equal(findBrowser(has("chromium"), {}, "darwin", (f) => f === "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser", vivaldi), "/Applications/Brave Browser.app/Contents/MacOS/Brave Browser");
+});
+
+test("studio: onClosed fires after the last tab leaves, and a reconnect inside graceMs cancels it", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "alp-grace-")), file = join(dir, "p1.alp.json");
+  copyFileSync(join(root, "examples/p1.alp.json"), file);
+  let closed = 0;
+  const s = await studio({ file, port: 0, graceMs: 200, onClosed: () => closed++ });
+  const sleep = (ms: number) => new Promise((ok) => setTimeout(ok, ms));
+  // open a tab's event stream; reading the first chunk means the server has added this client
+  const tab = async () => { const ac = new AbortController(); const r = await fetch(s.url + "api/events", { signal: ac.signal }); await r.body!.getReader().read(); return ac; };
+  try {
+    (await tab()).abort(); await sleep(100); assert.equal(closed, 0);
+    await sleep(400); assert.equal(closed, 1);
+    (await tab()).abort(); await sleep(100);
+    const t3 = await tab(); await sleep(400); assert.equal(closed, 1);
+    t3.abort(); await sleep(400); assert.equal(closed, 2);
+  } finally { await s.close(); rmSync(dir, { recursive: true, force: true }); }
 });
 
 test("agentloops install writes the entry, icon and MIME type under XDG_DATA_HOME only", { skip: process.platform !== "linux" }, () => {

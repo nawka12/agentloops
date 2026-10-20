@@ -9,7 +9,7 @@ Use it from **Claude Code**, Codex, Cursor, opencode or any MCP client. The codi
 ## Requirements
 
 - **Node.js 24** or newer.
-- A Chromium-family browser (Chromium, Chrome, Brave or Edge) for the app window and for exporting audio with no studio open. Without one, the studio opens in your default browser.
+- A Chromium-family browser (Chromium, Chrome, Brave, Edge or Vivaldi) for the app window and for exporting audio with no studio open. The app window opens in your default browser when it is Chromium-family, else the first one on PATH; without one, the studio opens in your default browser.
 - `ffmpeg`, optional, for MP3 export. WAV needs nothing extra.
 
 ## Install
