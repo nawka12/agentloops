@@ -1,8 +1,10 @@
 # Plan: more instruments
 
-Status: planned 2026-10-18. Slice A merged 2026-10-19. Slice B in progress on branch `slice-9-jazz-band` (2026-10-19).
+Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slice C merged 2026-10-20. Question 4 under [Decide before slice C](#decide-before-slice-c-2026-10-20) is still open for D.
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
+
+**Next priorities (2026-10-20):** J-rock and ballad songs. J-rock needs guitars, an electric bass and a rock kit (slice C). Ballads need strings, an acoustic guitar and orchestral colour (slice D).
 
 ## Feedback from a song agent (2026-10-19, after slice A)
 
@@ -55,6 +57,7 @@ Notes already carry `vel` (0–1, default 0.5, `src/project.ts:249`). It means a
 | `sax` (Eb alto) | [University of Iowa Musical Instrument Samples](https://theremin.music.uiowa.edu/MIS.html) | Free "for any projects, without restrictions"; they ask for a citation or link |
 | `piano` | Salamander Grand Piano (recommended), or Iowa's piano | Salamander is CC BY 3.0 (Alexander Holm). [One source](https://github.com/educandu/abcjs-soundfonts) says it's public domain since 2022, unconfirmed, so keep the attribution. Iowa: no restrictions, drier (recorded in an anechoic room) |
 | Slice B: upright bass (plucked), vibraphone, maybe muted trumpet | Iowa | As above. Check which playing styles exist before relying on them |
+| Slice D: string sections, harp, glockenspiel, timpani; maybe solo violin, suspended cymbal | [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) | CC0. Has violin, viola and cello sections (`susVib`, two layers `v1`/`v2`, plus pizz and tremolo), `Strings/Harp`, `Strings/Solo Violin`, `Percussion/Glock`, `Percussion/Timpani` (hits and `Rolls`), `VSCO 1 Percussion/varMetal/Cymbals/susp`. No drum-kit crash, china or splash |
 
 Iowa recorded each note at pp, mf and ff. Mellow songs want the pp and mf recordings. Iowa has only alto and soprano sax; I didn't find a free tenor with a clear license ([Weresax](https://www.kvraudio.com/product/weresax-by-karoryfer/details) is also alto, license unchecked).
 
@@ -112,15 +115,80 @@ Scope as decided on 2026-10-19 (see [Decided before slice B](#decided-before-sli
 
 As built: the ride is loudness-normalized (mean -40 dB), not peak-normalized: the stick click set the mf hit's peak, so the pp hit came out 10 dB louder. Brass is spikier than the sax, so `trumpet` and `trombone` have higher `peak`s in `SAMPLED`. The Iowa pp vibes C6–F6 file has no C#6, and the vibes sit about 10 cents sharp (left as recorded). Upright and vibes splits need per-file silence levels and a highpass on the whole recording (`fix`, `hp` in `scripts/samples.mjs`). Iowa downloads ran at ~25 KB/s from the laptop; the friend machine fetched the vibes at ~0.5 MB/s.
 
-### C: the earlier synth list
+### C: J-rock band
 
-All pure Web Audio in `ui/sound.ts`:
+Planned 2026-10-20, for anime-opening J-rock: 150–200 BPM, distorted guitars, a busy bass, a crash at the top of every section.
+
+| Part | Today | New |
+|---|---|---|
+| Rhythm and lead guitar | `saw` or `supersaw` stand in | `distguitar` |
+| Clean guitar (verse arpeggios) | `pluck` | `eguitar` |
+| Electric bass | `sub` (a sine), `upright` (jazz pizz) | `ebass` |
+| Rock drums | `drums` sounds electronic: an 808-style kick that ducks the pump bus, a noise snare, and a crash that's just highpassed noise | `rock` kit, sampled crash |
+| Double-tracked guitars (the same part twice, panned left and right) | notes carry `pan` (src/project.ts:249), but ui/sound.ts ignores it | note pan |
+
+- [x] Questions answered (see [Decide before slice C](#decide-before-slice-c-2026-10-20))
+- [x] A Karplus-Strong string, moved here from E's `guitar`: a buffer computed in JS (about 4 s), cached per key and audio context. `eguitar`, `distguitar` and D's `guitar` all play it
+- [x] `distguitar`: the string, then drive, then a WaveShaper (tanh, 4× oversampling), then a cabinet (highpass 90 Hz, lowpass 4.5 kHz). The distortion keeps it ringing for the note's length, and it releases fast. vel < 0.4 gives a palm mute: a damped string, lowpass ~1.2 kHz, short. Keys 36–88 (drop C up to E6). Built with one amp per channel instead (see As built)
+- [x] `eguitar`: the same string, clean, with a light chorus (a short delay swept by a slow LFO)
+- [x] `ebass`: a picked bass. Saw plus square through a lowpass that closes from ~2 kHz to ~600 Hz over 150 ms, with a little saturation. vel brightens the pick. Keys 23–60 (5-string B0 up to C4). Not pumped
+- [x] `rock` kit, GM keys like `drums`: a lower, punchier kick that doesn't duck the pump bus; a snare with body (two tones) and a longer, brighter tail with room reverb; the open hat (46) is choked by the closed hats (42/44)
+- [x] Sampled cymbals for every kit, like the ride: 49/57 crash, 52 china, 55 splash, each with an mf and a soft hit. Source: Iowa's percussion pages (where the ride came from) or VSCO's suspended cymbal. Use whichever sounds more like a kit crash
+- [x] Note `pan`: pass it through like `vel` (engine voice start, main.ts, export score), and add a StereoPanner after the voice gain when pan isn't 0
+- [x] A `guitar` family in the dropdown (`eguitar`, `distguitar`, and later `guitar`); `ebass` goes in bass, `rock` in drums; add them to the validator list
+- [x] Manual: a line per new sound, plus J-rock tips:
+  - Power chords (root, 5th, octave) on `distguitar`; full triads get muddy under distortion
+  - Verse: palm-muted 8ths (vel 0.3). Chorus: open chords that ring for a bar
+  - Two `distguitar` channels play the same part, panned -0.8 and 0.8
+  - Bass: 8th notes on the root, locked to the kick
+  - Drums: 8th-note hats in the verse, open hat or ride in the chorus, a crash on beat 1 of every section with a tom fill into it
+  - The "royal road" progression IV–V–iii–vi (in C: Fmaj7 → G7 → Em7 → Am), and vi–IV–V–I
+  - Last chorus up a half or whole step
+- [x] Export test covers the new sounds
+- [x] You listen in the studio (approved 2026-10-20, after the guitar fixes)
+
+As built: the cymbals are Iowa's stick hits on an 18" crash (49, 57), a 16" china (52) and a splash (55), at mf and pp, loudness-matched like the ride (`cymbals` in `scripts/samples.mjs`, 0.24 MB); every kit plays them, and the old noise crash is gone. The string's burst is a triangle pluck at 1/5 of the string plus noise (pure noise left high notes with weak fundamentals), and its 2-point average still shortens the top octave: E6 fades within ~0.4 s. A palm mute is a ~0.15 s chug. The open-hat choke works across channels and kits (one drummer). **After the first listen** (distorted guitars sounded thin): the double-tracked pair was one signal (the string is cached per pitch and both channels play the same ticks), so a panned string now plays its side's own take, 4 cents off and 0–8 ms late (L/R correlation 0.27, tested); each channel gets one shared amp per pan instead of a shaper per note, so chords distort together and the channel gain sits after the distortion; and the cabinet is modelled (thump 110 Hz, scoop 400 Hz, presence 2.5 kHz, 24 dB/oct above 5 kHz) after a tight input (highpass 120 Hz, push at 750 Hz). An export note's bus is rewired into the amp, so it is still cut loose when the note ends. **Release fix, for every sound:** `release()` used `cancelAndHoldAtTime`, which adds no event once the envelope has finished, so the release ramp started back at the envelope's last event and every sustained and sampled note faded across its whole length. Each voice now carries its envelope's last `[time, level]` and holds it until the note ends. Sustained sounds got about 2.5 dB louder on a 1 s note; `pluck` went from 0.13 to 0.16 to stay inside the export test's ±10 dB (its peaks hit the limiter, so it only gained 0.7 dB).
+
+### D: ballad
+
+Planned 2026-10-20, for ballads at 60–80 BPM: piano and strings carry the song, and the drums come in late.
+
+| Part | Today | New |
+|---|---|---|
+| Piano, Rhodes | `piano`, `epiano` | nothing new |
+| String section: held chords, swells, counter-lines | none | sampled `strings`, loop points |
+| Acoustic guitar arpeggios and strums | none | `guitar` |
+| Warm pad | `supersaw` is too bright | `pad`, moved here from E |
+| Harp glissandi, glockenspiel ("music box") hooks, timpani at the climax | `bell` | `harp`, `glock`, `timpani` |
+| A reverse-cymbal swell into the chorus | none | `noise`, moved here from E |
+| Soft drums: side stick in the verse, a crash in the chorus | 37 side stick, plus C's `rock` kit at low vel | nothing new |
+
+- [ ] Questions answered (see [Decide before slice C](#decide-before-slice-c-2026-10-20))
+- [ ] **Loop points** for the sustained sampled sounds (strings, sax, trumpet, trombone): the prep script picks a loop in the steady part of each recording and bakes a crossfade into the file, so `loopStart`/`loopEnd` loop without a click, and `SAMPLED` gets the loop times. Held notes then ring for their full length. This also removes the sax `ponytail:` and unblocks ballad endings (see the song-agent feedback)
+- [ ] Slow-attack fix, moved here from E (the hold point becomes `t + Math.max(0.35, s.a + 0.1)`): strings and pads need it
+- [ ] `strings`: sampled VSCO section sustains with vibrato, as one sound: the cello section low, the viola section in the middle, the violin section on top. Two layers (`v1` soft, `v2` mf). vel also sets the attack: soft notes swell in over ~0.4 s. Roots every 3 semitones from the cellos' lowest note up; check the files for the range. wet ~0.35
+- [ ] `guitar`: steel-string acoustic. C's string, clean and bright, with a body resonance (peaking filters at ~100 and ~200 Hz)
+- [ ] Sampled from VSCO: `harp` (plucked, decays on its own), `glock`, `timpani` (hits; maybe the roll for notes longer than a beat)
+- [ ] `pad` and `noise` from E's table
+- [ ] Optional, decided below: solo `violin` (VSCO `Arco Vib`) and `cello` (Iowa) for counter-melodies; E's `choir`
+- [ ] A `strings` family (`strings`, `harp`, and maybe `violin`, `cello`); `glock` and `timpani` go in mallets, `pad` in pad, `noise` in a new fx family
+- [ ] Manual: a line per new sound, plus ballad tips:
+  - 60–80 BPM. Verse 1 is piano alone: roots in the left hand, broken chords in the right
+  - Strings come in at the chorus with whole-note chords (vel 0.3–0.4, so they swell), and a counter-line fills the gaps in the melody
+  - Drums come in at verse 2 with side stick (37) on 2 and 4; the full kit and a crash arrive in the chorus
+  - Strum: put a chord's notes 1–2 ticks apart, lowest string first
+  - The royal road progression, and the Canon progression I–V–vi–iii–IV–I–IV–V
+  - A `noise` swell or a timpani roll into the last chorus, which goes up a whole step; end on a held chord
+- [ ] Export test covers the new sounds
+- [ ] You listen in the studio
+
+### E: the rest of the synth list
+
+All pure Web Audio in `ui/sound.ts`. `guitar` moved to C, and `pad`, `noise` and the slow-attack fix moved to D. Sampled `strings` in D replace the synth strings planned here.
 
 | Family | Sound | How it's made |
 |---|---|---|
-| Pads | `pad` | 3 detuned saws, slow attack, slow filter sweep, long release, lots of reverb |
-| | `strings` | Saw ensemble, soft attack, vibrato that comes in late |
-| | `choir` | A saw through three vowel filters for "ah" (800 / 1150 / 2900 Hz), vibrato |
+| Pads | `choir` | A saw through three vowel filters for "ah" (800 / 1150 / 2900 Hz), vibrato |
 | Bass | `reese` | Two saws detuned ±12 cents, drifting lowpass (DnB), pumped by the kick |
 | | `acid` | 303-style: a resonant lowpass (Q 12) that drops from 2.5 kHz to 300 Hz on each note |
 | | `wobble` | A lowpass swept by an LFO in 8th notes at the song's tempo (dubstep), pumped |
@@ -128,18 +196,15 @@ All pure Web Audio in `ui/sound.ts`:
 | Leads | `brass` | A saw whose lowpass opens from 400 Hz to 3 kHz over 80 ms |
 | | `flute` | A sine with some bandpassed breath noise and delayed vibrato |
 | One-shots | `marimba` | A sine plus 4× and 10× partials that fade quickly |
-| | `guitar` | Karplus-Strong string: a buffer computed in JS, cached per key and audio context |
-| FX | `noise` | Filtered noise centred on the key, for risers and sweeps |
 
-New GM keys for `drums` (today they fall through to the rim click): 37 side stick, 41/43/45/47/48/50 toms, 54 tambourine, 56 cowbell (808: 540 + 800 Hz squares, bandpassed), 70 maracas, 75 claves.
+D's `noise` is the FX entry: filtered noise centred on the key, for risers and sweeps. The GM drum keys planned here were built in B.
 
-Engine changes C needs:
-- **Slow-attack fix:** the hold point at `t + 0.35` (`ui/sound.ts:80`) comes before the peak when `a` > 0.35. Change it to `t + Math.max(0.35, s.a + 0.1)`.
+Engine change E needs:
 - **Tempo for `wobble`:** add `bpm` to `VoiceSound` (main.ts has `bpm()`) and pass it into `make`; `renderWav` passes `s.bpm`.
 
-### D (optional): a demo song
+### F (optional): demo songs
 
-A mellow piano piece or a jazz trio (piano, upright, brushes, sax), in `examples/` next to `kawaii-bass.alp.json`, so it shows up in the studio Browser.
+A mellow piano piece or a jazz trio (piano, upright, brushes, sax), a J-rock song and a ballad, in `examples/` next to `kawaii-bass.alp.json`, so they show up in the studio Browser.
 
 ## Check
 
@@ -168,8 +233,24 @@ As built: piano roots stop at 105 (Salamander's C8 sample measures ~+125 cents s
 - **Song-agent items:** the SKILL.md refresh joins B. Vocal chops, sax loop points and channel pan/reverb wait for a later slice.
 - Iowa has no brushes or toms, so those stay synthesized.
 
+## Decide before slice C (2026-10-20)
+
+Answered 2026-10-20, except 4, which is asked before slice D starts.
+
+1. **Guitars:** synth (a Karplus-Strong string through an amp model) first, looking for samples only if it sounds fake? Recommended: distortion hides most synth artifacts, and I haven't found a free electric guitar with a clear license.
+   **Answer:** Synth first.
+2. **Rock drums:** a synth kick and snare plus sampled cymbals (recommended), or a fully sampled kit (more MB, and a license hunt)?
+   **Answer:** Synth kick and snare plus sampled cymbals.
+3. **Pan:** use the `pan` notes already carry (recommended: no format change, but an agent sets it on every note), or add a channel `pan`?
+   **Answer:** Note `pan`.
+4. **Ballad extras:** which of solo violin, cello, choir, harp, glockenspiel and timpani go in D?
+   **Answer:**
+5. **Package size:** the samples are 8.9 MB today. Strings, harp, glockenspiel, timpani and cymbals add about 7 MB. OK?
+   **Answer:** Yes, about 16 MB is fine.
+
 ## Not in this plan
 
 - **Per-channel synth knobs** (attack, release, cutoff), like FL's channel settings.
 - **A swing setting** in the engine: written swing (ticks 0 / 64) covers it for now.
 - **Loading SoundFonts or SFZ files**, or using your own samples.
+- **Pitch bends and slides** (guitar bends, string portamento): the format has no bend, and a note's `slide` means something else (it continues the previous voice's conversation).

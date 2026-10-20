@@ -166,8 +166,11 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 - **Pitch:** a note's `key` is its **MIDI pitch**. In FL naming, 60 is C5 and 69 is A5 (440 Hz). Every key a channel plays must be a row in its keymap, so name the rows after the pitches ("A4", "C5") and use template `{{note.text}}`.
 - **Length:** a note rings for its `len` at `clock.bpm`, or longer while its agent is still running. 24 ticks is a 16th step, 96 a beat, and 384 a bar.
 - **Chords:** stack notes at the same `start`. Raise the channel's `polyphony` (default 4) to at least the chord size.
-- **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
+- **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). A note's `pan` (-1 left … 1 right, default 0) places it in the stereo field; the reverb stays centred. The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
   - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato); `epiano` (an FM Rhodes: a bright bite on the attack, tremolo, and a slow fade over a few seconds while held); `organ` (Hammond drawbars with a key click and a rotating-speaker wobble; it sustains at full level).
+    - `eguitar` (a clean electric guitar, keys 36–88): a plucked string with a light chorus. `vel` does nothing; a long note rings for its length and the top octave fades sooner.
+    - `distguitar` (a distorted guitar, keys 36–88): the same string through an amp and cabinet, which keeps long notes ringing for their length. `vel` below 0.4 is a palm mute: a short, dark chug. Each channel has one amp, so a chord distorts as one sound, and the channel's `gain` is its volume after the distortion. Stack a power chord rather than a full triad.
+    - `ebass` (a picked electric bass, keys 23–60): a bright pick that closes to a round tone in 150 ms; `vel` brightens the pick. A long note holds for its length. Not pumped by the kick.
   - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
   - **Sampled:** real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness.
     - `piano` (a grand piano, keys 21–108) rings out on its own and fades at the note's end.
@@ -181,11 +184,11 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - 39 clap
     - 41/43/45/47/48/50 toms, low floor tom up to high tom
     - 42/44 closed hat
-    - 46 open hat
-    - 49/57 crash
-    - 51/59 ride bow and 53 ride bell: a sampled ride cymbal that rings out whole; `vel` below 0.4 is the soft hit
+    - 46 open hat (a closed hat, 42 or 44, cuts it short; true for every kit)
+    - 49/57 crash, 52 china, 55 splash, 51/59 ride bow and 53 ride bell: sampled cymbals that ring out whole; `vel` below 0.4 is the soft hit
     - 54 tambourine, 56 cowbell, 70 maracas, 75 claves
     - anything else plays a rim click
+  - **`rock`, the same keys for rock:** a lower, punchier kick that does *not* duck the pump, and a snare with more body, a longer, brighter tail and more room. Everything else is shared with `drums`.
   - **`brushes`, the same keys for ballads:** a soft round kick (35/36, still ducks the pump), a brush slap on 38, and on 40 a brush swirl that swells in and lasts the note's length, so one note held for the bar sweeps it. Hats are a touch softer; the rest is shared with `drums`.
 - **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
 - **Structure:**
@@ -209,6 +212,16 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - The ride pattern "ding ding-a ding" goes on the ride (51): every beat, plus the swung "and" (tick 64) of 2 and 4, with the hat (44) on 2 and 4. Use 53 for the bell.
   - `brushes` for ballads: a swirl on 40 held for the bar, a slap on 38 on 2 and 4.
   - Comp on the "and" of 2 and 4.
+- **J-rock** (`distguitar`, `eguitar`, `ebass`, `rock`):
+  - 150–200 BPM.
+  - Power chords (root, 5th, octave) on `distguitar`; full triads get muddy under distortion.
+  - Verse: palm-muted 8ths (`vel` 0.3). Chorus: open chords that ring for a bar.
+  - Two `distguitar` channels play the same part, panned -0.8 and 0.8. A panned guitar note plays its side's own take (slightly detuned and a few ms loose), so the pair stays wide.
+  - `ebass`: 8th notes on the root, locked to the kick.
+  - `rock` drums: 8th-note hats in the verse, open hat or ride in the chorus, a crash (49) on beat 1 of every section with a tom fill into it.
+  - Royal road IV–V–iii–vi (in C: Fmaj7 → G7 → Em7 → Am), and vi–IV–V–I.
+  - Last chorus up a half or whole step.
+  - `eguitar` arpeggios for verses.
 - **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
 - **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
 

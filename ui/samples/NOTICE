@@ -43,4 +43,10 @@ ride/   21-inch ride cymbal, stick (bow and bell hits), University of Iowa Elect
         Changes made: one hit each of the bow and the bell at mf and pp split from the recordings,
         trimmed to 4 s, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
 
+cymbals/ 18-inch crash (49), 16-inch china (52) and splash (55) cymbals, stick, University of Iowa Electronic
+        Music Studios, Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
+        Free to use without restrictions; citation requested, so it is given here.
+        Changes made: one hit each at mf and pp, trimmed to 4 s, faded out, loudness-matched,
+        and re-encoded to mono 80 kbps MP3.
+
 The MP3s are rebuilt from the original recordings by scripts/samples.mjs.

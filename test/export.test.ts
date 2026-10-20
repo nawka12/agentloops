@@ -196,9 +196,9 @@ test("export timing: a 64 s click track starts at 0 and stays on the grid", { sk
 });
 
 test("every sound renders: not silent, level within 10 dB of triangle", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
-  // ponytail: ±10 dB, not 6: today's `sub` sits at +7 dB and `pluck` at -9 dB of triangle (a decaying note over a 2 s bar). Retune those, then tighten
-  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a ride for brushes)
-  const key = (x: string) => (x === "drums" ? 36 : x === "brushes" ? 51 : 60);
+  // ponytail: ±10 dB, not 6: `sub` sits at about +9 dB and `pluck` at -9.5 dB (its peaks hit the limiter) of triangle (a decaying note over a 2 s bar). Retune those, then tighten
+  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a crash for rock, a ride for brushes)
+  const key = (x: string) => (x === "drums" ? 36 : x === "rock" ? 49 : x === "brushes" ? 51 : 60);
   const { file, s } = await setup({
     format: "agentloops/1", name: "Sounds", clock: { bpm: 120 },
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: key(x), name: "n", template: "x" }] })),
@@ -219,6 +219,47 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
       assert.ok(rms[i] > 1e-4, `${x}: bar ${i + 1} is silent`);
       assert.ok(Math.abs(db(rms[i]) - db(tri)) <= 10, `${x}: ${db(rms[i]).toFixed(1)} dB vs triangle ${db(tri).toFixed(1)} dB`);
     });
+  } finally { await m.client.close(); await s.close(); }
+});
+
+test("note pan: a note at pan -1 plays left only, at 1 right only", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Pan", clock: { bpm: 120 },
+    channels: [{ id: "c", name: "C", sound: "triangle", generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 60, name: "go", template: "x" }] }],
+    patterns: [{ id: "p", lengthSteps: 32, notes: { c: [{ start: "1:01", len: 192, key: 60, pan: -1 }, { start: "2:01", len: 192, key: 60, pan: 1 }] } }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "pan.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24), db = (v: number) => 20 * Math.log10(v);
+    const lr = (bar: number) => { // [left, right] RMS over a 2 s bar
+      const sum = [0, 0]; let n = 0;
+      for (let o = 44 + bar * 2 * rate * 4; o < 44 + (bar + 1) * 2 * rate * 4; o += 4, n++) for (const c of [0, 1]) { const v = b.readInt16LE(o + 2 * c) / 32768; sum[c] += v * v; }
+      return sum.map((x) => Math.sqrt(x / n) + 1e-6);
+    };
+    const [l0, r0] = lr(0), [l1, r1] = lr(1);
+    t.diagnostic(`bar 1 (pan -1): L ${db(l0).toFixed(1)} dB, R ${db(r0).toFixed(1)} dB; bar 2 (pan 1): L ${db(l1).toFixed(1)} dB, R ${db(r1).toFixed(1)} dB`);
+    assert.ok(db(l0) - db(r0) > 12, "pan -1 is louder on the left");
+    assert.ok(db(r1) - db(l1) > 12, "pan 1 is louder on the right");
+  } finally { await m.client.close(); await s.close(); }
+});
+
+test("double-track: two distguitar channels panned apart stay two guitars, not one in the middle", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
+  const ch = (id: string) => ({ id, name: id, sound: "distguitar", polyphony: 4, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [40, 47, 52].map((key) => ({ key, name: "n", template: "x" })) });
+  const chord = (pan: number) => [40, 47, 52].map((key) => ({ start: "1:01", len: 384, key, pan })); // an E5 power chord held for the bar, the same on both sides
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Double", clock: { bpm: 120 }, channels: [ch("l"), ch("r")],
+    patterns: [{ id: "p", lengthSteps: 16, notes: { l: chord(-0.8), r: chord(0.8) } }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "double.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24);
+    let lr = 0, ll = 0, rr = 0;
+    for (let o = 44; o < 44 + 2 * rate * 4; o += 4) { const l = b.readInt16LE(o), x = b.readInt16LE(o + 2); lr += l * x; ll += l * l; rr += x * x; }
+    const corr = lr / Math.sqrt(ll * rr);
+    t.diagnostic(`L/R correlation ${corr.toFixed(3)}`);
+    assert.ok(corr < 0.9, `the two sides are one signal (correlation ${corr.toFixed(3)})`); // identical takes panned ±0.8 give exactly 1
   } finally { await m.client.close(); await s.close(); }
 });
 

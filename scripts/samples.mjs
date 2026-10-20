@@ -1,4 +1,4 @@
-// Rebuilds the note samples in ui/samples/{piano,sax,upright,vibes,trombone,trumpet,ride}: Salamander Grand Piano V3
+// Rebuilds the note samples in ui/samples/{piano,sax,upright,vibes,trombone,trumpet,ride,cymbals}: Salamander Grand Piano V3
 // (CC BY 3.0, Alexander Holm) and University of Iowa Musical Instrument Samples. The MP3s are committed; this script only
 // exists so they can be rebuilt. Needs ffmpeg, curl, tar.
 // Usage: node scripts/samples.mjs [cacheDir [sound...]] (no sounds = all; the others' MP3s are left alone).
@@ -52,6 +52,10 @@ const SETS = {
   ride: { kind: "decay", sec: 4, pitch: false, hp: 150, start: -95, loud: -40, sil: "-100dB:d=0.25", // the pp cymbal is quieter than the rumble
     roots: [51, 53], url: (l, r) => `${IOWA}Percussion/cymbals/suspended%20cymbals/stick/21ride.stick.${r}.${l}.aif`,
     files: [["normal", 51, 1], ["bell", 53, 1]] },
+  // Kit cymbals, stick on the bow, loudness-matched like the ride: 49 an 18" crash, 52 a 16" china, 55 a splash.
+  cymbals: { kind: "decay", sec: 4, pitch: false, hp: 150, start: -95, loud: -40, sil: "-100dB:d=0.25",
+    roots: [49, 52, 55], url: (l, r) => `${IOWA}Percussion/cymbals/suspended%20cymbals/stick/${r}.stick.normal.${l}.aif`,
+    files: [["18crash", 49, 1], ["16chinese", 52, 1], ["splash", 55, 1]] },
 };
 
 const sh = (cmd, args) => {
