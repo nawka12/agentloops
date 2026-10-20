@@ -195,7 +195,7 @@ export const fl = (id: string) => (S.flash.has(id) ? " flash" : "");
 function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
   Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null });
-  preload((st.project?.channels ?? []).map((c: any) => c.sound)); // sampled sounds start downloading when a song opens or a channel's Sound changes
+  preload(st.project); // the sample files the song plays start downloading when it opens or changes
   if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;
   if (ids.size) { pending = { ids, at: Date.now() }; tryFlash(); }

@@ -28,7 +28,8 @@ const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?
   glock: { roots: [79, 84, 91, 96, 103, 108], rel: 0.8, peak: 0.8, wet: 0.3, soft: false },
   timpani: { roots: [41, 47, 49, 52, 55], rel: 0.5, peak: 1.2, wet: 0.2 }, // five drums, each repitched around its tuning
 };
-const KITS = ["drums", "brushes", "rock"], CYMBALS = ["ride/51", "ride/53", "cymbals/49", "cymbals/52", "cymbals/55"].flatMap((f) => [f, `${f}-p`]); // every kit shares the sampled cymbals: ride bow (51, 59) and bell (53), crash (49, 57), china (52), splash (55), each mf and soft
+const KITS = ["drums", "brushes", "rock"], CYMBAL: Record<number, string> = { 49: "cymbals/49", 57: "cymbals/49", 52: "cymbals/52", 55: "cymbals/55", 51: "ride/51", 59: "ride/51", 53: "ride/53" }; // every kit shares the sampled cymbals: crash (49, 57), china (52), splash (55), ride bow (51, 59) and bell (53), each mf and soft (-p)
+const RATE = 44100; // the sample files' rate: the live context and the export both run at it, so one decode of each file serves both (an AudioBuffer works in any context)
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
 /** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks (`duck` is its gain stage, even when a note gets its own `pump`), a reverb send, shared noise. */
@@ -48,7 +49,7 @@ function rig(c: BaseAudioContext, vol: number): Rig {
 let ac: AudioContext | null = null, R: Rig;
 /** Browsers only allow audio after a user gesture: call this from Play, Space and the speaker button. */
 export function unlock() {
-  if (!ac) { try { ac = new AudioContext(); } catch { return; } R = rig(ac, sound.vol); loadSamples(ac, want); }
+  if (!ac) { try { ac = new AudioContext({ sampleRate: RATE }); } catch { try { ac = new AudioContext(); } catch { return; } } R = rig(ac, sound.vol); loadSamples(ac, want); }
   ac.resume().catch(() => {});
 }
 const live = () => !!ac && sound.on && ac.state === "running";
@@ -214,33 +215,52 @@ function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel:
   oscs.forEach((x) => x.start(t));
   return { g, oscs, rel: s.rel, hold: [h, Math.max(0.0001, s.hold * lvl)] as [number, number] };
 }
-// Sample buffers, cached per audio context. A failed download stays missing until reload (ponytail: no retry).
-const bank = new WeakMap<BaseAudioContext, Map<string, { b?: AudioBuffer; p?: Promise<void> }>>();
+// Sample buffers, cached per sample rate (not per context): a decoded AudioBuffer plays in any context of that rate. A failed download stays missing until reload (ponytail: no retry).
+const bank = new Map<number, Map<string, { b?: AudioBuffer; p?: Promise<void> }>>();
 const sampleName = (kind: string, root: number, soft: boolean) => `${kind}/${root}${soft ? "-p" : ""}`;
+/** the entry for file f at c's rate: starts the download + decode if nobody has (also the safety net for a note whose file wasn't preloaded: silent once, then it plays) */
 function fetchSample(c: BaseAudioContext, f: string) {
-  let m = bank.get(c); if (!m) bank.set(c, (m = new Map()));
+  let m = bank.get(c.sampleRate); if (!m) bank.set(c.sampleRate, (m = new Map()));
   if (!m.has(f)) { const e: { b?: AudioBuffer; p?: Promise<void> } = {}; m.set(f, e); e.p = fetch(`/ui/samples/${f}.mp3`, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then((a) => c.decodeAudioData(a)).then((b) => { e.b = b; }).catch(() => {}); }
   return m.get(f)!;
 }
-/** load every layer of the given sampled sounds (and the cymbals, for a kit) on c; resolves to the files that failed. ponytail: all roots, both layers, even if a song uses few */
-async function loadSamples(c: BaseAudioContext, kinds: Iterable<string>) {
-  const ks = [...new Set(kinds)], fs = [...ks.filter((k) => SAMPLED[k]).flatMap((k) => SAMPLED[k].roots.flatMap((r) => (SAMPLED[k].soft === false ? [false] : [false, true]).map((soft) => sampleName(k, r, soft)))), ...(ks.some((k) => KITS.includes(k)) ? CYMBALS : [])];
-  const es = fs.map((f) => [f, fetchSample(c, f)] as const);
+/** load these files on c; resolves to the ones that failed */
+async function loadSamples(c: BaseAudioContext, files: Iterable<string>) {
+  const es = [...new Set(files)].map((f) => [f, fetchSample(c, f)] as const);
   await Promise.all(es.map(([, e]) => e.p));
   return es.filter(([, e]) => !e.b).map(([f]) => f);
 }
-const want = new Set<string>();
-/** Live: the song uses these sounds (a channel's `sound`s; unknown and synth ones are ignored, kits load the cymbals). Loads now, or once Play unlocks the audio. */
-export function preload(sounds: (string | undefined)[]) { for (const s of sounds) if (s && (SAMPLED[s] || KITS.includes(s))) want.add(s); if (ac) loadSamples(ac, want); }
+/** a sampled sound's key folded into range, and the nearest recorded root */
+function nearest(s: (typeof SAMPLED)[string], key: number) {
+  const lo = s.roots[0], hi = s.roots[s.roots.length - 1];
+  while (key < lo - 3) key += 12; while (key > hi + 3) key -= 12; // the edge roots may pitch 3 semitones outward (piano 106-108); beyond that, fold by octaves into the range
+  return [key, s.roots.reduce((a, b) => (Math.abs(b - key) < Math.abs(a - key) ? b : a))] as const;
+}
+/** the one place that decides which sample file a note plays (playing and preloading both ask): a sampled sound's nearest root, or a kit's cymbal; soft (-p) under vel 0.4. undefined: no file */
+function fileOf(kind: string, key: number, vel: number): string | undefined {
+  const s = SAMPLED[kind], soft = vel < 0.4;
+  if (s) return sampleName(kind, nearest(s, key)[1], soft && s.soft !== false);
+  const f = KITS.includes(kind) ? CYMBAL[key] : undefined;
+  return f && (soft ? `${f}-p` : f);
+}
+let want = new Set<string>();
+/** Live: the project's sample files, from every note of every pattern (a step note is key 60, an unset vel 0.5). Loads now, or once Play unlocks the audio. */
+export function preload(p: any) {
+  const kind = new Map<string, string>((p?.channels ?? []).map((c: any) => [c.id, kindOf(c.generator?.plugin ?? "script", c.sound)])), fs = new Set<string>();
+  const add = (ch: string, key = 60, vel = 0.5) => { const f = fileOf(kind.get(ch) ?? "", key, vel); if (f) fs.add(f); };
+  for (const pat of p?.patterns ?? []) {
+    for (const [ch, steps] of Object.entries<any>(pat.steps ?? {})) if (steps.some(Boolean)) add(ch);
+    for (const [ch, ns] of Object.entries<any>(pat.notes ?? {})) for (const n of ns) add(ch, n.key, n.vel);
+  }
+  want = fs; if (ac) loadSamples(ac, want);
+}
 /** one sampled note: the nearest recorded root, repitched; null if its buffer isn't loaded (yet) */
 function sampled(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number) {
-  const s = SAMPLED[kind], lo = s.roots[0], hi = s.roots[s.roots.length - 1];
-  while (key < lo - 3) key += 12; while (key > hi + 3) key -= 12; // the edge roots may pitch 3 semitones outward (piano 106-108); beyond that, fold by octaves into the range
-  const root = s.roots.reduce((a, b) => (Math.abs(b - key) < Math.abs(a - key) ? b : a)), b = bank.get(r.c)?.get(sampleName(kind, root, vel < 0.4 && s.soft !== false))?.b;
+  const s = SAMPLED[kind], [k, root] = nearest(s, key), b = fetchSample(r.c, fileOf(kind, key, vel)!).b;
   if (!b) return null;
   const src = r.c.createBufferSource(), g = gain(r, 0.0001);
   const v = Math.max(0.0002, s.peak * lvl * (0.5 + vel)), a = Math.max(0.005, (s.swell ?? 0) * (1 - vel)); // vel 0.5 is unity
-  src.buffer = b; src.playbackRate.value = 2 ** ((key - root) / 12); if (s.loop) { src.loop = true; [src.loopStart, src.loopEnd] = s.loop; }
+  src.buffer = b; src.playbackRate.value = 2 ** ((k - root) / 12); if (s.loop) { src.loop = true; [src.loopStart, src.loopEnd] = s.loop; }
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a);
   src.connect(g); g.connect(r.out); if (s.wet) send(r, g, s.wet);
   src.start(t);
@@ -319,9 +339,9 @@ function bell(r: Rig, f: number, t: number, lvl: number) {
   mod.connect(idx); idx.connect(car.frequency); car.connect(g); g.connect(r.pump); send(r, g, 0.4);
   for (const o of [car, mod]) { o.start(t); o.stop(t + 1.6); }
 }
-/** a sampled cymbal (file `ride/51`, `cymbals/49`…, soft under vel 0.4), rung out whole; skipped until its buffer has loaded. ponytail: no choke, so 16th-note ride patterns pile up */
+/** a sampled cymbal (file `ride/51`, `cymbals/49-p`…, from fileOf), rung out whole; skipped until its buffer has loaded. ponytail: no choke, so 16th-note ride patterns pile up */
 function cymbal(r: Rig, f: string, t: number, lvl: number, vel: number) {
-  const b = bank.get(r.c)?.get(`${f}${vel < 0.4 ? "-p" : ""}`)?.b;
+  const b = fetchSample(r.c, f).b;
   if (!b) return;
   const src = r.c.createBufferSource(), g = gain(r, 1.4 * lvl * (0.5 + vel)); // the files are loudness-matched (scripts/samples.mjs), not peak-normalized
   src.buffer = b; src.connect(g); g.connect(r.out); send(r, g, 0.15); src.start(t);
@@ -363,8 +383,7 @@ function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "dru
   }
   else if (key === 42 || key === 44) { const o = openHat.get(r.c); if (o) { release({ g: o, oscs: [], rel: 0.02 }, t, t); openHat.delete(r.c); } n(filt(r, "highpass", 7500), soft ? 0.15 : 0.22, 0.05); } // choke the open hat
   else if (key === 46) openHat.set(r.c, n(filt(r, "highpass", 6500), soft ? 0.14 : 0.2, 0.3));
-  else if (key === 49 || key === 57 || key === 52 || key === 55) cymbal(r, `cymbals/${key === 57 ? 49 : key}`, t, lvl, vel);
-  else if (key === 51 || key === 53 || key === 59) cymbal(r, `ride/${key === 53 ? 53 : 51}`, t, lvl, vel);
+  else if (CYMBAL[key]) cymbal(r, fileOf(kit, key, vel)!, t, lvl, vel);
   else if (key === 54) n(filt(r, "bandpass", 8500, 0.9), 0.22, 0.14, t, 0.1);
   else if (key === 56) { // 808 cowbell: two squares, bandpassed, short
     const b = filt(r, "bandpass", 700, 1), g = hit(r, 0.12 * lvl, t, 0.3, 0.001); b.connect(g); g.connect(r.out);
@@ -390,11 +409,12 @@ export function click(accent: boolean) { if (!live() || !sound.metro) return; pi
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
 export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
 /** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out. */
-export async function renderWav(s: Score, rate = 44100): Promise<ArrayBuffer> {
+export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
   const pre = Math.floor(0.006 * rate); // the limiter's fixed 6 ms lookahead (DynamicsCompressor in Blink, Gecko and WebKit) delays everything: render it, then cut it off
   const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate) + pre;
   const c = new OfflineAudioContext(2, length, rate), r = rig(c, 0.8), chs = new Map(s.channels.map((x) => [x.id, x]));
-  const miss = await loadSamples(c, s.channels.map((x) => kindOf(x.plugin ?? "script", x.sound))); // decode before rendering starts
+  const kindAt = (id: string) => kindOf(chs.get(id)?.plugin ?? "script", chs.get(id)?.sound);
+  const miss = await loadSamples(c, s.notes.flatMap((n) => fileOf(kindAt(n.ch), n.key, n.vel ?? 0.5) ?? [])); // decode before rendering starts (a no-op for the files the live tab has)
   if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
   // Speed: every node wired to the output is processed in every block, sounding or not, so notes are made just ahead of the render (at a
   // suspend each second) and each plays into its own bus, cut loose once its sources have ended (offline, nothing garbage-collects them).
@@ -402,9 +422,9 @@ export async function renderWav(s: Score, rate = 44100): Promise<ArrayBuffer> {
   for (const k of ["createOscillator", "createBufferSource"] as const) { const f: any = c[k].bind(c); (c as any)[k] = () => { const x = f(); made.push(x); return x; }; }
   let i = 0;
   const upTo = (until: number) => { for (; i < notes.length && sec(notes[i].start) < until; i++) {
-    const n = notes[i], ch = chs.get(n.ch), t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
+    const n = notes[i], t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
     b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
-    const v = note(b, kindOf(ch?.plugin ?? "script", ch?.sound), n.key, t, ch?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len));
+    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len));
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
     let left = made.length;
     if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };
