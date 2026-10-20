@@ -171,10 +171,18 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `eguitar` (a clean electric guitar, keys 36–88): a plucked string with a light chorus. `vel` does nothing; a long note rings for its length and the top octave fades sooner.
     - `distguitar` (a distorted guitar, keys 36–88): the same string through an amp and cabinet, which keeps long notes ringing for their length. `vel` below 0.4 is a palm mute: a short, dark chug. Each channel has one amp, so a chord distorts as one sound, and the channel's `gain` is its volume after the distortion. Stack a power chord rather than a full triad.
     - `ebass` (a picked electric bass, keys 23–60): a bright pick that closes to a round tone in 150 ms; `vel` brightens the pick. A long note holds for its length. Not pumped by the kick.
+    - `guitar` (a steel-string acoustic, keys 40–88): a bright plucked string with a wooden body and a touch of reverb. `vel` brightens it a little. A long note rings for its length and the top octave fades sooner. Strum by offsetting a chord's notes.
+    - `pad` (a warm pad, keys 36–84): three detuned saws that fade in over 0.6 s while the filter opens over a couple of seconds, with a long release and lots of reverb. `vel` does nothing. Darker than `supersaw` and not pumped; a long note keeps sounding for its length.
+    - `noise` (a riser, any key): filtered noise centred on the key. Over the note's length it swells in from silence while the band rises an octave, then cuts off at the note's end, so one long note is a reverse-cymbal swell into the next section. `vel` does nothing.
   - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
   - **Sampled:** real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness.
     - `piano` (a grand piano, keys 21–108) rings out on its own and fades at the note's end.
-    - `sax` (an alto sax, keys 49–79), `trumpet` (keys 52–85) and `trombone` (keys 40–70, the low horn) are each one recording of a few seconds, so a longer note ends early.
+    - `sax` (an alto sax, keys 49–79), `trumpet` (keys 52–85) and `trombone` (keys 40–70, the low horn) loop the steady part of the note, so a long note holds for its length.
+    - `strings` (a string section, keys 36–89: cellos up to C5, violas, then violins from C6) loops and holds for the note's length. `vel` also sets the attack: soft notes (0.3–0.4) swell in over about 0.4 s, so write whole-note chords a touch early or let them bloom.
+    - `violin` (a solo violin with vibrato, keys 55–99) loops and holds, for counter-melodies.
+    - `harp` (keys 28–104) is plucked and decays on its own; one dynamic, so `vel` only sets loudness.
+    - `glock` (a glockenspiel, keys 79–108, music-box high) rings out; one dynamic.
+    - `timpani` (five drums, keys 41–58) is one hit that rings out. A roll is fast repeated hits (16ths or 32nds), swelling with `vel`.
     - `upright` (a plucked double bass, keys 28–67) decays on its own, so a long note just fades.
     - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
@@ -222,6 +230,14 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Royal road IV–V–iii–vi (in C: Fmaj7 → G7 → Em7 → Am), and vi–IV–V–I.
   - Last chorus up a half or whole step.
   - `eguitar` arpeggios for verses.
+- **Ballad** (`piano`, `strings`, `violin`, `guitar`, `pad`, `harp`, `glock`, `timpani`, `noise`):
+  - 60–80 BPM. Verse 1 is `piano` alone: roots in the left hand, broken chords in the right.
+  - `strings` come in at the chorus with whole-note chords (`vel` 0.3–0.4, so they swell in), and a `violin` counter-line fills the gaps in the melody.
+  - Drums come in at verse 2 with the side stick (37) on 2 and 4; the full kit and a crash arrive in the chorus.
+  - `guitar` strum: put a chord's notes 1–2 ticks apart, lowest string first.
+  - Royal road IV–V–iii–vi, and the Canon progression I–V–vi–iii–IV–I–IV–V.
+  - Into the last chorus, a `noise` swell (one note held for the bar before) or a `timpani` roll (fast repeated hits); that chorus goes up a whole step. End on a held chord.
+  - `harp` for glissandi (fast runs, a 16th or 32nd apart) and `glock` for music-box hooks an octave or two above the melody.
 - **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
 - **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
 

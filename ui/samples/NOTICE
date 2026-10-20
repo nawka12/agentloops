@@ -10,8 +10,9 @@ piano/  Salamander Grand Piano V3 by Alexander Holm.
 sax/    Eb alto saxophone with vibrato, University of Iowa Electronic Music Studios,
         Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
         Free to use without restrictions; citation requested, so it is given here.
-        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
-        faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+        Changes made: notes split from the recordings, one sample per 3 semitones, retuned to equal
+        temperament, cut to a loop (a gain ramp and a crossfade at the loop end, nothing kept after it),
+        peak-normalized, and re-encoded to mono 80 kbps MP3.
 
 upright/ plucked double bass (pizzicato, E, A, D and G strings), University of Iowa Electronic Music Studios,
         Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
@@ -28,14 +29,16 @@ vibes/  vibraphone (sustain pedal), University of Iowa Electronic Music Studios,
 trombone/ tenor trombone, University of Iowa Electronic Music Studios,
         Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
         Free to use without restrictions; citation requested, so it is given here.
-        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
-        retuned to equal temperament, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+        Changes made: notes split from the recordings, one sample per 3 semitones, retuned to equal
+        temperament, cut to a loop (a gain ramp and a crossfade at the loop end, nothing kept after it),
+        peak-normalized, and re-encoded to mono 80 kbps MP3.
 
 trumpet/ Bb trumpet with vibrato, University of Iowa Electronic Music Studios,
         Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
         Free to use without restrictions; citation requested, so it is given here.
-        Changes made: notes split from the recordings, one sample per 3 semitones, trimmed,
-        retuned to equal temperament, faded out, peak-normalized, and re-encoded to mono 80 kbps MP3.
+        Changes made: notes split from the recordings, one sample per 3 semitones, retuned to equal
+        temperament, cut to a loop (a gain ramp and a crossfade at the loop end, nothing kept after it),
+        peak-normalized, and re-encoded to mono 80 kbps MP3.
 
 ride/   21-inch ride cymbal, stick (bow and bell hits), University of Iowa Electronic Music Studios,
         Musical Instrument Samples: https://theremin.music.uiowa.edu/MIS.html
@@ -48,5 +51,37 @@ cymbals/ 18-inch crash (49), 16-inch china (52) and splash (55) cymbals, stick, 
         Free to use without restrictions; citation requested, so it is given here.
         Changes made: one hit each at mf and pp, trimmed to 4 s, faded out, loudness-matched,
         and re-encoded to mono 80 kbps MP3.
+
+strings/ string section sustains with vibrato: the cello, viola and violin sections (their susvib sets), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: cellos for C2-C4, violas D4-A4, violins C5-D6, two dynamics (v1 soft; v2, or v3 for
+        the cellos, mf), mixed to mono, retuned to equal temperament where over 10 cents off, cut to a loop (a gain
+        ramp and a crossfade at the loop end, nothing kept after it), peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+violin/ solo violin, arco with vibrato (Strings/Solo Violin/Arco Vib), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: p and f dynamics, mixed to mono, retuned to equal temperament where over 10 cents off,
+        cut to a loop (a gain ramp and a crossfade at the loop end, nothing kept after it), peak-normalized,
+        and re-encoded to mono 80 kbps MP3.
+
+harp/   concert harp, plucked (Strings/Harp), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: one dynamic per note (G1 left out), mixed to mono, trimmed to 4 s, faded out,
+        retuned to equal temperament where over 10 cents off, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+glock/  glockenspiel, medium mallets (Percussion/Glock), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: mixed to mono, trimmed to 4 s, faded out, retuned to equal temperament where over
+        10 cents off, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+timpani/ five timpani, single hits (Percussion/Timpani, v1 soft and v3 mf, first round robin), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: each drum retuned to its nearest note, mixed to mono, trimmed to 4 s, faded out,
+        peak-normalized, and re-encoded to mono 80 kbps MP3.
 
 The MP3s are rebuilt from the original recordings by scripts/samples.mjs.

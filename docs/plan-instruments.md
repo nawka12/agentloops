@@ -1,6 +1,6 @@
 # Plan: more instruments
 
-Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slice C merged 2026-10-20. Question 4 under [Decide before slice C](#decide-before-slice-c-2026-10-20) is still open for D.
+Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slice C merged 2026-10-20. Slice D built on `slice-11-ballad` and approved 2026-10-20. Question 4 under [Decide before slice C](#decide-before-slice-c-2026-10-20) is still open for D.
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
 
@@ -22,7 +22,7 @@ An agent writing a jazz/kawaii song ("Strawberry Bebop") listed what it had to f
 7. **Growl/wobble bass** for kawaii future bass drops; only `sub` exists. (Was slice C.)
 
 **Limits of the new samples:**
-- **Sax loop points:** a note longer than its 2.5–4 s recording cuts off, which blocks ballad endings and held notes (the `ponytail:` in ui/sound.ts).
+- **Sax loop points:** a note longer than its 2.5–4 s recording cuts off, which blocks ballad endings and held notes (the `ponytail:` in ui/sound.ts). *Fixed in slice D.*
 - **A low horn:** the alto stops at 49 (C#3), so there's no low horn line. Free tenor sax wasn't found; Iowa has a tenor trombone. *Not in this plan yet.*
 - **Per-channel reverb and pan:** only the sax has a reverb setting (`wet: 0.25`), and channels can't set reverb or pan, so the band sounds flat. Notes already carry `pan` (src/project.ts:249) but ui/sound.ts ignores it. *Not in this plan yet; it overlaps "Not in this plan: per-channel knobs".*
 
@@ -163,24 +163,26 @@ Planned 2026-10-20, for ballads at 60–80 BPM: piano and strings carry the song
 | A reverse-cymbal swell into the chorus | none | `noise`, moved here from E |
 | Soft drums: side stick in the verse, a crash in the chorus | 37 side stick, plus C's `rock` kit at low vel | nothing new |
 
-- [ ] Questions answered (see [Decide before slice C](#decide-before-slice-c-2026-10-20))
-- [ ] **Loop points** for the sustained sampled sounds (strings, sax, trumpet, trombone): the prep script picks a loop in the steady part of each recording and bakes a crossfade into the file, so `loopStart`/`loopEnd` loop without a click, and `SAMPLED` gets the loop times. Held notes then ring for their full length. This also removes the sax `ponytail:` and unblocks ballad endings (see the song-agent feedback)
-- [ ] Slow-attack fix, moved here from E (the hold point becomes `t + Math.max(0.35, s.a + 0.1)`): strings and pads need it
-- [ ] `strings`: sampled VSCO section sustains with vibrato, as one sound: the cello section low, the viola section in the middle, the violin section on top. Two layers (`v1` soft, `v2` mf). vel also sets the attack: soft notes swell in over ~0.4 s. Roots every 3 semitones from the cellos' lowest note up; check the files for the range. wet ~0.35
-- [ ] `guitar`: steel-string acoustic. C's string, clean and bright, with a body resonance (peaking filters at ~100 and ~200 Hz)
-- [ ] Sampled from VSCO: `harp` (plucked, decays on its own), `glock`, `timpani` (hits; maybe the roll for notes longer than a beat)
-- [ ] `pad` and `noise` from E's table
-- [ ] Optional, decided below: solo `violin` (VSCO `Arco Vib`) and `cello` (Iowa) for counter-melodies; E's `choir`
-- [ ] A `strings` family (`strings`, `harp`, and maybe `violin`, `cello`); `glock` and `timpani` go in mallets, `pad` in pad, `noise` in a new fx family
-- [ ] Manual: a line per new sound, plus ballad tips:
+- [x] Questions answered (see [Decide before slice C](#decide-before-slice-c-2026-10-20))
+- [x] **Loop points** for the sustained sampled sounds (strings, sax, trumpet, trombone): the prep script picks a loop in the steady part of each recording and bakes a crossfade into the file, so `loopStart`/`loopEnd` loop without a click, and `SAMPLED` gets the loop times. Held notes then ring for their full length. This also removes the sax `ponytail:` and unblocks ballad endings (see the song-agent feedback)
+- [x] Slow-attack fix, moved here from E (the hold point becomes `t + Math.max(0.35, s.a + 0.1)`): strings and pads need it
+- [x] `strings`: sampled VSCO section sustains with vibrato, as one sound: the cello section low, the viola section in the middle, the violin section on top. Two layers (`v1` soft, `v2` mf). vel also sets the attack: soft notes swell in over ~0.4 s. Roots every 3 semitones from the cellos' lowest note up; check the files for the range. wet ~0.35
+- [x] `guitar`: steel-string acoustic. C's string, clean and bright, with a body resonance (peaking filters at ~100 and ~200 Hz)
+- [x] Sampled from VSCO: `harp` (plucked, decays on its own), `glock`, `timpani` (hits; maybe the roll for notes longer than a beat)
+- [x] `pad`: 3 detuned saws, slow attack, slow filter sweep, long release, lots of reverb. `noise`: filtered noise centred on the key, for risers and sweeps
+- [x] Solo `violin` (VSCO `Arco Vib`) for counter-melodies, looped like the strings (cello and choir were left out)
+- [x] A `strings` family (`strings`, `harp`, `violin`); `glock` and `timpani` go in mallets, `pad` in pad, `noise` in a new fx family
+- [x] Manual: a line per new sound, plus ballad tips:
   - 60–80 BPM. Verse 1 is piano alone: roots in the left hand, broken chords in the right
   - Strings come in at the chorus with whole-note chords (vel 0.3–0.4, so they swell), and a counter-line fills the gaps in the melody
   - Drums come in at verse 2 with side stick (37) on 2 and 4; the full kit and a crash arrive in the chorus
   - Strum: put a chord's notes 1–2 ticks apart, lowest string first
   - The royal road progression, and the Canon progression I–V–vi–iii–IV–I–IV–V
   - A `noise` swell or a timpani roll into the last chorus, which goes up a whole step; end on a held chord
-- [ ] Export test covers the new sounds
-- [ ] You listen in the studio
+- [x] Export test covers the new sounds
+- [x] You listen in the studio (approved 2026-10-20)
+
+As built: VSCO names the string sections, the glock, and only those, an octave low (measured; the script maps them and now checks octaves, not just pitch class). `strings` blends the cello section up to 60, violas 62–69 and violins from 72 (VSCO's roots, 2–4 semitones apart), with soft v1 and mf v2 (v3 for the cellos); soft notes swell in (`swell` in `SAMPLED`). `violin` is the solo arco with vibrato, p and f. `harp` and `glock` have one dynamic (`soft: false`); the harp's noisy G1 is left out. `timpani` uses the five drums' measured tunings (41, 47, 49, 52, 55) as roots, rr1 hits only, no rolls. **Loops:** one window per sound (`loop` in `SAMPLED`, copied from `scripts/samples.mjs`); each file is cut at the window's end with a 0.25 s crossfade baked in and a gain ramp that levels the window, and the script fails files whose window isn't steady. Chromium's `decodeAudioData` trims LAME's encoder delay (measured), so no offset is needed. An 8 s note holds within ~1.3 dB on every looped sound (tested). The horns got smaller (they now end at the loop). New samples total 5 MB; `ui/samples` is 14 MB.
 
 ### E: the rest of the synth list
 
@@ -235,7 +237,7 @@ As built: piano roots stop at 105 (Salamander's C8 sample measures ~+125 cents s
 
 ## Decide before slice C (2026-10-20)
 
-Answered 2026-10-20, except 4, which is asked before slice D starts.
+Answered 2026-10-20 (4 just before slice D started).
 
 1. **Guitars:** synth (a Karplus-Strong string through an amp model) first, looking for samples only if it sounds fake? Recommended: distortion hides most synth artifacts, and I haven't found a free electric guitar with a clear license.
    **Answer:** Synth first.
@@ -244,7 +246,7 @@ Answered 2026-10-20, except 4, which is asked before slice D starts.
 3. **Pan:** use the `pan` notes already carry (recommended: no format change, but an agent sets it on every note), or add a channel `pan`?
    **Answer:** Note `pan`.
 4. **Ballad extras:** which of solo violin, cello, choir, harp, glockenspiel and timpani go in D?
-   **Answer:**
+   **Answer:** Harp, glockenspiel, solo violin and timpani. No cello and no choir.
 5. **Package size:** the samples are 8.9 MB today. Strings, harp, glockenspiel, timpani and cymbals add about 7 MB. OK?
    **Answer:** Yes, about 16 MB is fine.
 

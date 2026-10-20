@@ -222,6 +222,27 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
   } finally { await m.client.close(); await s.close(); }
 });
 
+test("looped sounds hold an 8 s note: still sounding long after their files end", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
+  const sounds = ["sax", "trumpet", "trombone", "strings", "violin"], BAR = 2, BARS = 5; // 120 BPM; each sound plays one 4-bar note (8 s) in its own 5-bar slot. Files end at the loop's end, 1.4-6.5 s in
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Loops", clock: { bpm: 120 },
+    channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 64, name: "n", template: "x" }] })),
+    patterns: [{ id: "p", lengthSteps: 16 * BARS * sounds.length, notes: Object.fromEntries(sounds.map((x, i) => [x, [{ start: `${i * BARS + 1}:01`, len: 4 * 384, key: 64 }]])) }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "loops.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24);
+    const rms = (from: number, to: number) => { let sum = 0, n = 0; for (let o = 44 + Math.floor(from * rate) * 4; o < 44 + Math.floor(to * rate) * 4; o += 2, n++) { const v = b.readInt16LE(o) / 32768; sum += v * v; } return Math.sqrt(sum / n); };
+    const db = (v: number) => 20 * Math.log10(v + 1e-9);
+    sounds.forEach((x, i) => {
+      const at = i * BARS * BAR, early = db(rms(at + 0.3, at + 1.3)), late = db(rms(at + 6.3, at + 7.3)); // 6.3-7.3 s is past every file's end, before the note's release
+      t.diagnostic(`${x}: ${early.toFixed(1)} dB at 0.3-1.3 s, ${late.toFixed(1)} dB at 6.3-7.3 s`);
+      assert.ok(late > early - 9, `${x}: the held note died (${late.toFixed(1)} vs ${early.toFixed(1)} dB)`);
+    });
+  } finally { await m.client.close(); await s.close(); }
+});
+
 test("note pan: a note at pan -1 plays left only, at 1 right only", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
   const { file, s } = await setup({
     format: "agentloops/1", name: "Pan", clock: { bpm: 120 },

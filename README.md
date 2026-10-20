@@ -105,4 +105,4 @@ Press **Space** to play. **Shift+click ⤓** saves an MP3 next to the song. It i
 
 ## Credits
 
-The `piano`, `sax`, `trumpet`, `trombone`, `upright` and `vibes` sounds, and the drum kits' ride are recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0) and the University of Iowa Musical Instrument Samples. Details in [ui/samples/NOTICE](ui/samples/NOTICE).
+The `piano`, `sax`, `trumpet`, `trombone`, `upright`, `vibes`, `strings`, `violin`, `harp`, `glock` and `timpani` sounds, and the drum kits' cymbals are recordings: Salamander Grand Piano by Alexander Holm (CC BY 3.0), the University of Iowa Musical Instrument Samples, and VSCO 2 Community Edition (CC0). Details in [ui/samples/NOTICE](ui/samples/NOTICE).
