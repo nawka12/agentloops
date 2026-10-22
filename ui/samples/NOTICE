@@ -66,6 +66,12 @@ violin/ solo violin, arco with vibrato (Strings/Solo Violin/Arco Vib), from
         cut to a loop (a gain ramp and a crossfade at the loop end, nothing kept after it), peak-normalized,
         and re-encoded to mono 80 kbps MP3.
 
+pizz/ solo violin pizzicato (Strings/Solo Violin/Pizz, first round-robin), from
+        VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
+        CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: p and f dynamics (f only above A5), mixed to mono, retuned to equal temperament where
+        over 10 cents off, trimmed to 1.5 s with a fade, peak-normalized, and re-encoded to mono 80 kbps MP3.
+
 harp/   concert harp, plucked (Strings/Harp), from
         VSCO 2 Community Edition, by Versilian Studios (Sam Gossner),
         CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE

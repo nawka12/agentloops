@@ -91,7 +91,7 @@ export function score(p: any, onlyPattern?: string): string {
   return out.join("\n");
 }
 
-/** Create <dir>/song.alp.json plus harness files (see connect.ts). Existing files are skipped, except the AgentLoops SKILL.md (always rewritten). */
+/** Create <dir>/song.alp.json plus harness files (see connect.ts). Existing files are skipped, except the AgentLoops SKILL.md and an AGENTS.md that is the AgentLoops manual (always rewritten). */
 function init(dir: string, harness = "other") {
   const song = join(dir, "song.alp.json");
   if (existsSync(song)) console.log(`skipped ${song} (already exists)`);

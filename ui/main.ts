@@ -133,7 +133,7 @@ function applyEvent(e: any, live: boolean) {
     const id = `${e.runId}:${e.voice}`;
     if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
       const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
-      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm() }, e.at);
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, text: e.text, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm() }, e.at);
     }
     if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel), e.at);
     if (e.type === "frame" && e.kind === "error") blip();

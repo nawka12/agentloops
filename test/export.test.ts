@@ -8,7 +8,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { studio } from "../src/studio.ts";
 import { which } from "../src/export.ts";
-import { SOUNDS } from "../src/project.ts";
+import { MANUAL, SOUNDS } from "../src/project.ts";
 
 const root = fileURLToPath(new URL("..", import.meta.url));
 const ffmpeg = which("ffmpeg"), chromium = which("chromium", "chromium-browser", "google-chrome", "google-chrome-stable");
@@ -243,6 +243,27 @@ test("looped sounds hold an 8 s note: still sounding long after their files end"
   } finally { await m.client.close(); await s.close(); }
 });
 
+test("chop: the note's text picks the vowel ('i' has its 2nd formant near 2.8 kHz, 'a' near 1.2 kHz)", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Vowels", clock: { bpm: 120 },
+    channels: [{ id: "c", name: "C", sound: "chop", generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 60, name: "go", template: "x" }] }],
+    patterns: [{ id: "p", lengthSteps: 32, notes: { c: [{ start: "1:01", len: 192, key: 60, text: "a" }, { start: "2:01", len: 192, key: 60, text: "i" }] } }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "vowels.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24);
+    const power = (bar: number, hz: number) => { // Goertzel on the left channel, 0.2-0.9 s into a 2 s bar
+      const k = 2 * Math.cos((2 * Math.PI * hz) / rate); let s1 = 0, s2 = 0;
+      for (let i = Math.round((bar * 2 + 0.2) * rate); i < (bar * 2 + 0.9) * rate; i++) { const s0 = b.readInt16LE(44 + i * 4) / 32768 + k * s1 - s2; s2 = s1; s1 = s0; }
+      return s1 * s1 + s2 * s2 - k * s1 * s2;
+    };
+    const f = 440 * 2 ** (-9 / 12), tilt = (bar: number) => 10 * Math.log10(power(bar, 11 * f) / power(bar, 5 * f)); // harmonic 11 (2.88 kHz) over harmonic 5 (1.31 kHz)
+    t.diagnostic(`11th over 5th harmonic: "a" ${tilt(0).toFixed(1)} dB, "i" ${tilt(1).toFixed(1)} dB`);
+    assert.ok(tilt(1) - tilt(0) > 12, "the vowel did not follow the text");
+  } finally { await m.client.close(); await s.close(); }
+});
+
 test("note pan: a note at pan -1 plays left only, at 1 right only", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
   const { file, s } = await setup({
     format: "agentloops/1", name: "Pan", clock: { bpm: 120 },
@@ -312,12 +333,19 @@ test("/api/connect writes the harness files, skips existing ones, and gives a sn
     assert.deepEqual(o.wrote, ["AGENTS.md"]);
     assert.match(o.snippet, /--project kawaii-bass\.alp\.json --scope run --budget 1/);
 
-    const c = (await post("/api/connect", { harness: "codex" })).body; // AGENTS.md exists now; the TOML is new
-    assert.deepEqual([c.wrote, c.skipped], [[".codex/config.toml"], ["AGENTS.md"]]);
+    writeFileSync(join(dir, "AGENTS.md"), "# AgentLoops manual\n\nstale"); // the MCP server refreshes a stale manual at startup
+    const m2 = await mcp(join(dir, "kawaii-bass.alp.json"));
+    await m2.call("project_get", { summary: true });
+    await m2.client.close();
+    assert.equal(readFileSync(join(dir, "AGENTS.md"), "utf8"), MANUAL);
+
+    const c = (await post("/api/connect", { harness: "codex" })).body; // AGENTS.md is the manual, so it is rewritten; the TOML is new
+    assert.deepEqual([c.wrote, c.skipped], [["AGENTS.md", ".codex/config.toml"], []]);
     assert.ok(readFileSync(join(dir, ".codex/config.toml"), "utf8").startsWith(`[mcp_servers.agentloops]\ncommand = ${JSON.stringify(process.execPath)}\nargs = [`));
+    writeFileSync(join(dir, "AGENTS.md"), "# My own notes\n"); // the user's own AGENTS.md is skipped
     const u = (await post("/api/connect", { harness: "cursor" })).body;
     assert.equal(JSON.parse(readFileSync(join(dir, ".cursor/mcp.json"), "utf8")).mcpServers.agentloops.type, "stdio");
-    assert.deepEqual(u.wrote, [".cursor/mcp.json"]);
+    assert.deepEqual([u.wrote, u.skipped], [[".cursor/mcp.json"], ["AGENTS.md"]]);
     const p = (await post("/api/connect", { harness: "opencode" })).body;
     const oc = JSON.parse(readFileSync(join(dir, "opencode.json"), "utf8")).mcp.agentloops;
     assert.deepEqual([p.wrote, oc.type, oc.command[0], oc.command[3]], [["opencode.json"], "local", process.execPath, "mcp"]);

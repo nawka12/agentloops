@@ -228,6 +228,20 @@ Engine change E needs:
 
 As built: `peak`s were set by the export test (all eight within +3 / -4 dB of `triangle`): `acid` 0.06, `808` 0.1 falling to 0.06 (it rings for the note, but the sine is loud), `flute` 0.09, `brass` 0.1, `choir` 0.1 (its vowel filters take most of the level, so each gets a gain of 3), `reese` and `wobble` 0.1. `808` is not pumped (the plan didn't say) and shares the existing `TANH` curve. `wobble`'s LFO starts in phase with the note and runs at `bpm / 60 * 2` Hz; `bpm` is a trailing argument of `make`, `sustain` and `note`. `marimba` skips its 10× partial above 20 kHz. `choir`'s vibrato fades in over 0.6 s and `flute`'s starts at 0.2 s. `vel` does nothing for any of the eight.
 
+### G: kawaii sounds and the manual (song-agent feedback, 2026-10-22)
+
+From a song agent's feedback on AGENTS.md: its "Making music" section steered songs into dense, same-sounding arrangements (the one song the user liked had 6 channels and 17 notes per bar; the others 10–19 channels and 42–69).
+
+- [x] Manual: a song-first process (concept, lyrics and melody, story beats as arrangement events, 1:30–2:30), arrangement discipline (6–8 parts, the singer's register kept clear, contrast between sections), genre lists reframed as menus with several progressions each, and the duplicate export timing removed
+- [x] A song's AGENTS.md that is the AgentLoops manual is refreshed like SKILL.md (on connect and at MCP startup); a user's own AGENTS.md is left alone
+- [x] `pizz`: VSCO solo violin pizzicato (CC0), p and f, keys 55–96
+- [x] `chop`: a formant vocal chop that sings the note's `text` (a i u e o, y, w, n, m)
+- [x] `growl`: a kawaii growl bass whose vowel moves across the note, from its `text` (default "wow"), pumped
+- [x] You listen in the studio (approved 2026-10-22)
+- Not built: a per-note pitch `glide` (needs automation; the manual lists it under "Not supported yet")
+
+As built: `text` now travels with the voice event and the export score, as a trailing argument of `make`, `sustain` and `note`. `chop` and `growl` share `formants()`: three bandpasses (F1, F2, F3 of a female voice) plus a level per letter, ramped from letter to letter; F1 stays above 1.1× the pitch so high chops keep their fundamental. `chop` moves a letter every 60 ms, `growl` spreads its letters over 85% of the note. Levels from the export test: `pizz` -1.2, `chop` -0.4, `growl` +2.4 dB against `triangle`. A test checks that "i" and "a" chops differ by more than 12 dB in harmonic 11 over harmonic 5 (measured 26.7). The VSCO C7 pizz reads as C6 in the octave check, so A6 is the top root.
+
 ### F (optional): demo songs
 
 A mellow piano piece or a jazz trio (piano, upright, brushes, sax), a J-rock song and a ballad, in `examples/` next to `kawaii-bass.alp.json`, so they show up in the studio Browser.

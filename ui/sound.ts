@@ -8,7 +8,7 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass", "reese", "acid", "wobble", "808"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], pad: ["supersaw", "pad", "choir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute", "chop"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "pizz", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass", "reese", "acid", "wobble", "808", "growl"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], pad: ["supersaw", "pad", "choir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
 const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
@@ -25,6 +25,7 @@ const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?
   trumpet: { roots: span(52, 85), rel: 0.12, peak: 0.9, wet: 0.25, loop: [1, 3.4] },
   strings: { roots: [36, 40, 43, 47, 50, 53, 57, 60, 62, 65, 69, 72, 76, 79, 83, 86], rel: 0.4, peak: 0.5, wet: 0.35, loop: [2.5, 5], swell: 0.6 }, // cello section to 60, violas 62-69, violins from 72
   violin: { roots: [55, 57, 60, 64, 67, 69, 72, 76, 79, 81, 84, 88, 91, 93, 96], rel: 0.25, peak: 0.75, wet: 0.3, loop: [4, 6.5] }, // solo, arco with vibrato
+  pizz: { roots: [55, 57, 60, 64, 67, 69, 72, 76, 79, 81, 88, 93], rel: 0.1, peak: 0.6, wet: 0.3 }, // solo violin pizzicato; soft layer up to 81, one dynamic above
   harp: { roots: [28, 35, 38, 41, 45, 48, 52, 55, 59, 62, 65, 69, 72, 76, 79, 83, 86, 89, 93, 95, 98, 101], rel: 0.6, peak: 0.45, wet: 0.3, soft: false },
   glock: { roots: [79, 84, 91, 96, 103, 108], rel: 0.8, peak: 0.8, wet: 0.3, soft: false },
   timpani: { roots: [41, 47, 49, 52, 55], rel: 0.5, peak: 1.2, wet: 0.2 }, // five drums, each repitched around its tuning
@@ -110,9 +111,27 @@ function amp(r: Rig, ch: string, p: number, lvl: number) {
   return a.input;
 }
 
+// Voice formants for `chop` and `growl`: F1, F2, F3 (Hz, a female voice) and a level. A note's text picks them letter by letter: the vowels a i u e o,
+// y and w (glides from i and u), n and m (a hum); other letters are skipped, and a text with no vowel plays the default.
+const VOWEL: Record<string, number[]> = { a: [850, 1220, 2810, 1], i: [310, 2790, 3310, 0.8], u: [370, 1300, 2670, 0.8], e: [550, 2000, 2900, 0.9], o: [500, 900, 2700, 0.9],
+  y: [300, 2600, 3200, 0.6], w: [330, 800, 2500, 0.6], n: [250, 1700, 2600, 0.35], m: [250, 1100, 2500, 0.35] };
+/** src through three bandpasses (Q q) at the formants of text's letters, letter i reached at t + at(i, count); F1 stays above the pitch f, as a high voice opens it. Returns the sum */
+function formants(r: Rig, src: AudioNode, text: string | undefined, dflt: string, f: number, t: number, at: (i: number, n: number) => number, q: number) {
+  let ls = [...(text ?? "").toLowerCase()].filter((c) => VOWEL[c]);
+  if (!ls.some((c) => "aiueo".includes(c))) ls = [...dflt];
+  const v = ls.map((c) => VOWEL[c]), lvl = gain(r, v[0][3]), sum = gain(r);
+  [1, 0.6, 0.3].forEach((amt, k) => {
+    const hz = (x: number[]) => (k ? x[k] : Math.max(x[0], f * 1.1)), bp = filt(r, "bandpass", hz(v[0]), q), g = gain(r, amt * q * 0.7);
+    bp.frequency.setValueAtTime(hz(v[0]), t); v.forEach((x, i) => i && bp.frequency.linearRampToValueAtTime(hz(x), t + at(i, v.length)));
+    src.connect(bp); bp.connect(g); g.connect(lvl);
+  });
+  lvl.gain.setValueAtTime(v[0][3], t); v.forEach((x, i) => i && lvl.gain.linearRampToValueAtTime(x[3], t + at(i, v.length))); lvl.connect(sum);
+  return sum;
+}
+
 // Sustained instruments: oscillators → filter → envelope. Released by the later of the note's end and the voice's end (live),
 // or at the note's end (offline).
-type Sus = { make: (r: Rig, f: number, t: number, vel: number, p: number, dur: number, bpm: number) => { oscs: AudioScheduledSourceNode[]; head: AudioNode }; peak: number; hold: number; a: number; rel: number; pumped?: boolean; wet?: number; amp?: boolean }; // amp: plays into its channel's amp
+type Sus = { make: (r: Rig, f: number, t: number, vel: number, p: number, dur: number, bpm: number, text?: string) => { oscs: AudioScheduledSourceNode[]; head: AudioNode }; peak: number; hold: number; a: number; rel: number; pumped?: boolean; wet?: number; amp?: boolean }; // amp: plays into its channel's amp
 const chain = (oscs: AudioScheduledSourceNode[], head: AudioNode) => ({ oscs, head });
 const SUSTAIN: Record<string, Sus> = {
   triangle: { make: (r, f) => { const o = osc(r, "triangle", f); return chain([o], o); }, peak: 0.16, hold: 0.07, a: 0.02, rel: 0.45 },
@@ -257,6 +276,27 @@ const SUSTAIN: Record<string, Sus> = {
     },
     peak: 0.1, hold: 0.06, a: 0.003, rel: 0.15,
   },
+  // vocal chop: a buzz (a lowpassed saw) and a little breath through the formants of the note's text, a letter every 60 ms ("nya" is n → y → a in 0.12 s, then holds the a;
+  // default "a"). Fast in, fast out, so the note's length gates it
+  chop: {
+    make: (r, f, t, vel, p, dur, bpm, text) => {
+      const o = osc(r, "sawtooth", f), lp = filt(r, "lowpass", 5000), n = r.c.createBufferSource(), ng = gain(r, 0.06), src = gain(r);
+      n.buffer = r.noise; n.loop = true; o.connect(lp); lp.connect(src); n.connect(ng); ng.connect(src);
+      return chain([o, n], formants(r, src, text, "a", f, t, (i) => i * 0.06, 4));
+    },
+    peak: 0.1, hold: 0.09, a: 0.005, rel: 0.04, wet: 0.2,
+  },
+  // kawaii growl: two detuned saws, driven, through formants that move across the note from letter to letter of its text (default "wow": u → o → u),
+  // over a clean sine at the key for weight. Pumped
+  growl: {
+    make: (r, f, t, vel, p, dur, bpm, text) => {
+      const pre = gain(r, 0.6), ws = r.c.createWaveShaper(), sub = osc(r, "sine", f), sg = gain(r, 0.5), sum = gain(r), oscs = [-7, 7].map((d) => { const o = osc(r, "sawtooth", f, d); o.connect(pre); return o; });
+      ws.curve = TANH; pre.connect(ws); sub.connect(sg); sg.connect(sum);
+      formants(r, ws, text, "wow", f, t, (i, n) => ((dur || 0.3) * 0.85 * i) / (n - 1), 6).connect(sum);
+      return chain([...oscs, sub], sum);
+    },
+    peak: 0.1, hold: 0.09, a: 0.005, rel: 0.08, pumped: true,
+  },
   // brass lead: a saw whose lowpass opens from 400 Hz to 3 kHz over 80 ms
   brass: {
     make: (r, f, t) => {
@@ -278,8 +318,8 @@ const SUSTAIN: Record<string, Sus> = {
   },
 };
 /** start a sustained tone at t; returns its gain and sources so the caller can release it */
-function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number, p = 0, dur = 0, bpm = 120) {
-  const s = SUSTAIN[kind] ?? SUSTAIN.triangle, { oscs, head } = s.make(r, hz(key), t, vel, p, dur, bpm), g = gain(r, 0.0001), h = t + Math.max(0.35, s.a + 0.1); // the hold point comes after the peak, even for a slow attack
+function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number, p = 0, dur = 0, bpm = 120, text?: string) {
+  const s = SUSTAIN[kind] ?? SUSTAIN.triangle, { oscs, head } = s.make(r, hz(key), t, vel, p, dur, bpm, text), g = gain(r, 0.0001), h = t + Math.max(0.35, s.a + 0.1); // the hold point comes after the peak, even for a slow attack
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, s.peak * lvl), t + s.a); g.gain.exponentialRampToValueAtTime(Math.max(0.0001, s.hold * lvl), h);
   head.connect(g); g.connect(s.pumped ? r.pump : r.out); if (s.wet) send(r, g, s.wet);
   oscs.forEach((x) => x.start(t));
@@ -348,8 +388,8 @@ const release = (v: Voice, now: number, at: number) => {
   else { g.cancelScheduledValues(Math.max(now, at)); g.setValueAtTime(Math.max(0.0001, g.value), Math.max(now, at)); } // ponytail: older engines jump to the current level
   g.exponentialRampToValueAtTime(0.0001, at + v.rel); v.oscs.forEach((x) => x.stop(at + v.rel + 0.05));
 };
-/** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise`, `bpm` only to `wobble` */
-function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120) {
+/** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise` and `growl`, `bpm` only to `wobble`, `text` only to `chop` and `growl` */
+function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120, text?: string) {
   if (SUSTAIN[kind]?.amp) { // into the channel's amp, which sets the level and pan. An export note's own bus is rewired into it, so it is still cut loose when the note ends
     const a = amp(r.root, ch, p, lvl);
     if (r.out === r.root.out) r = { ...r, out: a }; else { r.out.disconnect(); r.out.connect(a); }
@@ -359,11 +399,11 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0
   if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind);
   if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : kind === "marimba" ? marimba : bell)(r, hz(key), t, lvl); return null; }
   if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel, p);
-  return sustain(r, kind, key, t, lvl, vel, p, dur, bpm);
+  return sustain(r, kind, key, t, lvl, vel, p, dur, bpm, text);
 }
 
 const tones = new Map<string, Voice & { until: number }>();
-export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number };
+export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number; text?: string };
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
 // Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
 // main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
@@ -383,7 +423,7 @@ export function voiceStart(id: string, key: number, plugin: string, o: VoiceSoun
   if (!live() || tones.has(id)) return;
   const kind = kindOf(plugin, o.sound);
   if (!ONESHOT.has(kind) && tones.size >= MAX) return;
-  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm);
+  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm, o.text);
   stats.started++;
   if (!v) { stats.stopped++; if (KITS.includes(kind) && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
@@ -486,7 +526,7 @@ export function chime() { stats.events++; if (!live()) return; ping([1568], "sin
 export function click(accent: boolean) { if (!live() || !sound.metro) return; ping([accent ? 1760 : 1175], "sine", accent ? 0.16 : 0.09, 0.05); stats.clicks++; }
 
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
-export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
+export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number; text?: string }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
 /** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out. */
 export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
   const pre = Math.floor(0.006 * rate); // the limiter's fixed 6 ms lookahead (DynamicsCompressor in Blink, Gecko and WebKit) delays everything: render it, then cut it off
@@ -503,7 +543,7 @@ export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
   const upTo = (until: number) => { for (; i < notes.length && sec(notes[i].start) < until; i++) {
     const n = notes[i], t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
     b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
-    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm);
+    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm, n.text);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
     let left = made.length;
     if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };

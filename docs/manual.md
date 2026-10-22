@@ -181,12 +181,15 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `808` (a sub bass, keys 24–60): a sine that drops an octave in 30 ms (the punch), lightly saturated. `vel` does nothing. A long note rings for its length. Not pumped.
     - `brass` (a synth brass lead, keys 48–84): a saw whose filter opens in 80 ms (the blare). `vel` does nothing. A long note holds.
     - `flute` (keys 60–96): a sine with a little breath noise and vibrato that arrives after about 0.3 s. `vel` does nothing. A long note holds and its vibrato keeps going.
+    - `chop` (a vocal chop, keys 55–96): a buzzy voice that sings the note's `text`, read letter by letter: the vowels a i u e o; y and w glide in from i and u; n and m hum. Other letters are skipped, and a text with no vowel sings "a". The letters come 60 ms apart ("nya" is n → y → a, then holds the a). It starts and stops fast, so the note's length is the chop: 16ths stutter. `vel` does nothing. Not pumped.
+    - `growl` (a kawaii growl bass, keys 24–55): two driven saws through a vowel filter that moves across the whole note from letter to letter of its `text` (same letters as `chop`; default "wow", u → o → u; "yoi" is i → o → i, "wah" u → a), over a clean sine for weight. Pumped by the kick. `vel` does nothing. Repeated 8ths with text "yoi" give the "yoi-yoi".
   - **One-shot:** `pluck` (filter snap), `bell` (FM, long ring) and `marimba` (a wooden knock over a short tone, keys 48–96; `vel` does nothing, and a long note does not ring longer).
   - **Sampled:** real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness.
     - `piano` (a grand piano, keys 21–108) rings out on its own and fades at the note's end.
     - `sax` (an alto sax, keys 49–79), `trumpet` (keys 52–85) and `trombone` (keys 40–70, the low horn) loop the steady part of the note, so a long note holds for its length.
     - `strings` (a string section, keys 36–89: cellos up to C5, violas, then violins from C6) loops and holds for the note's length. `vel` also sets the attack: soft notes (0.3–0.4) swell in over about 0.4 s, so write whole-note chords a touch early or let them bloom.
     - `violin` (a solo violin with vibrato, keys 55–99) loops and holds, for counter-melodies.
+    - `pizz` (a plucked solo violin, keys 55–96) decays within about a second, whatever the note's length. The soft layer (`vel` below 0.4) goes up to key 81; above that there is one dynamic.
     - `harp` (keys 28–104) is plucked and decays on its own; one dynamic, so `vel` only sets loudness.
     - `glock` (a glockenspiel, keys 79–108, music-box high) rings out; one dynamic.
     - `timpani` (five drums, keys 41–58) is one hit that rings out. A roll is fast repeated hits (16ths or 32nds), swelling with `vel`.
@@ -210,48 +213,70 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - **`rock`, the same keys for rock:** a lower, punchier kick that does *not* duck the pump, and a snare with more body, a longer, brighter tail and more room. Everything else is shared with `drums`.
   - **`brushes`, the same keys for ballads:** a soft round kick (35/36, still ducks the pump), a brush slap on 38, and on 40 a brush swirl that swells in and lasts the note's length, so one note held for the bar sweeps it. Hats are a touch softer; the rest is shared with `drums`.
 - **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
-- **Structure:**
-  - Write one pattern per section (intro, verse, build, drop, break, outro), each typically `lengthSteps: 64` (4 bars), and place them as clips in the arrangement.
+- **Patterns and clips:**
+  - Write one pattern per section (intro, verse, chorus, drop, break, outro) at the length the section needs (`lengthSteps: 64` is 4 bars, `128` is 8), and place them as clips in the arrangement.
   - To layer, put clips on different `track`s at the same bar.
   - SONG plays the arrangement once; PAT loops the selected pattern.
 - **Listening:** the user hears the run, so **always `run_start` with `pace: "project"`**. Unpaced, every note fires at once.
-- **Words:** give vocal-chop notes syllables in `text`. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
-- **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated. It takes about 1.6× the song's length.
-- **Craft that works:**
-  - Royal-road chords IV–V–iii–vi (in C: Fmaj9 → G6/9 → Em9 → Am9) in rootless 7th/9th voicings around C5, with the bass on the roots an octave or two below.
-  - A pentatonic hook in C6–C7 that answers itself every bar.
-  - Future-bass chord stabs in a 3-3-2 rhythm (steps 1, 4, 7, then a held 9).
-  - Half-time drums (kick on 1 and on the "and" of 3, snare and clap on beat 3, hats on 8ths).
-  - Builds: a snare roll from quarters to 8ths to 16ths to 32nds, a riser, then a beat of silence before the drop.
-  - Kawaii bass sits at 150–170 BPM.
+- **Words:** `chop` sings the syllables in its notes' `text`. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
+- **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated.
+
+### Write the song before the arrangement
+
+1. **Concept.** One or two sentences: who sings, what happens, how it should feel. Tempo, key and genre follow from it.
+2. **Lyrics and melody.** If the song has a singer (an OpenUtau vocal or a person, mixed in after export), write the lyrics and the vocal melody before any accompaniment. Keep the melody in the project as a guide channel (`flute` or `chop`, `mute: true` for the export), so `score_view` shows what the band must leave room for. With no singer, the lead melody plays that role.
+3. **Story beats become arrangement events.** List the two to four moments the lyric turns on and give each one a sound or a silence: a cut to silence, a part dropping out, an instrument alone, a sound effect on the word, a chant. These moments are what people remember; a steady wall of parts is not.
+4. **Arrange last**, around the melody, with the discipline below.
+5. **Length:** 1:30–2:30 unless the user asks otherwise. A bar lasts 240 / bpm seconds, so 2:00 is 80 bars at 160 BPM and 40 bars at 80 BPM.
+
+### Arrangement discipline
+
+- **6–8 audible parts at most** at any moment (the drum kit counts as one), fewer in verses. Two parts with the same job (two pads, two basses) are one too many.
+- **Leave the singer's register to the singer.** A voice like Kasane Teto sits around keys 62–69 (OpenUtau names them D4–A4; the FL naming here, D5–A5). While someone sings, at most one harmony instrument plays in that range. Voice chords below it (keys 48–60) or above it (72 and up), and fill the gaps between sung phrases instead of playing over them.
+- **Leave space.** If every part plays every 16th, nothing stands out. Rests and sparse parts make the busy moments land.
+- **Contrast between sections.** The chorus or drop is the fullest; a verse drops at least half the parts; somewhere a section drops almost everything.
+- **The genre lists below are menus, not checklists.** Pick 4–6 sounds and two or three of the ideas for each song. Using everything makes every song dense and alike.
+- **Vary the harmony.** Each genre lists several progressions. Choose by the lyric's mood, give the chorus or bridge a different one from the verse, and don't default to the first one listed.
+
+### Genre menus
+
+- **Kawaii bass / future bass** (150–170 BPM; `supersaw`, `growl` or `sub`, `chop`, `pluck`, `bell`, `chip`, `pizz`, `drums`):
+  - Progressions (in C): the royal road IV–V–iii–vi (Fmaj9 → G6 → Em7 → Am9); vi–IV–I–V (Am7 → Fmaj7 → C → G); IVmaj7–III7–vi7–v7–I7 (Fmaj7 → E7 → Am7 → Gm7 → C7); I–V–vi–IV with a borrowed iv (F → Fm) closing the chorus.
+  - Future-bass chord stabs in a 3-3-2 rhythm (steps 1, 4, 7, then a held 9), with the bass on the roots an octave or two below.
+  - Half-time drums: kick on 1 and on the "and" of 3, snare and clap on beat 3, hats on 8ths.
+  - `growl` in the drop with a vowel text per note ("wow", "yoi", "wah"); `sub` under the verses.
+  - `chop` in the drop or between sung lines: 8ths and 16ths of syllables ("nya", "ya", "uu") that answer the melody.
+  - A pentatonic hook in keys 72–96 that answers itself every bar, or a `pizz` ostinato for a cute verse.
+  - Builds: a snare roll from quarters to 8ths to 16ths to 32nds, a `noise` riser, then a beat of silence before the drop.
 - **Jazz** (`piano` or `epiano`, `sax`, `trumpet`, `trombone`, `vibes`, an `upright` bass, `drums` or `brushes`):
+  - Progressions (in C): ii–V–I with rootless 9th/13th voicings (Dm9 → G13 → Cmaj9); I–vi–ii–V (Cmaj7 → A7 → Dm7 → G7); iii–VI7–ii–V (Em7 → A7 → Dm7 → G7); the minor ii–V–i (Bm7b5 → E7b9 → Am6).
   - Swing: write 8th notes at ticks 0 and 64 of each beat (96 ticks per beat).
-  - ii–V–I with rootless 9th/13th voicings (in C: Dm9 → G13 → Cmaj9).
   - Walking bass on quarter notes; `upright` covers keys 28–67.
   - The ride pattern "ding ding-a ding" goes on the ride (51): every beat, plus the swung "and" (tick 64) of 2 and 4, with the hat (44) on 2 and 4. Use 53 for the bell.
   - `brushes` for ballads: a swirl on 40 held for the bar, a slap on 38 on 2 and 4.
   - Comp on the "and" of 2 and 4.
-- **J-rock** (`distguitar`, `eguitar`, `ebass`, `rock`):
-  - 150–200 BPM.
+  - Mellow piano: `vel` 0.3–0.45 at 60–80 BPM.
+- **J-rock** (150–200 BPM; `distguitar`, `eguitar`, `ebass`, `rock`; recorded `heavy`, `crunch`, `chug`, `clean`):
+  - Progressions (in C or A minor): vi–IV–V–I (Am → F → G → C); the royal road IV–V–iii–vi (Fmaj7 → G7 → Em7 → Am); i–VI–VII in minor (Am → F → G); I–V–vi–iii–IV–I–IV–V for a big last chorus.
   - Power chords (root, 5th, octave) on `distguitar`; full triads get muddy under distortion.
   - Verse: palm-muted 8ths (`vel` 0.3). Chorus: open chords that ring for a bar.
-  - Two `distguitar` channels play the same part, panned -0.8 and 0.8. A panned guitar note plays its side's own take (slightly detuned and a few ms loose), so the pair stays wide.
+  - Two `distguitar` channels play the same part, panned -0.8 and 0.8. A panned guitar note plays its side's own take (slightly detuned and a few ms loose), so the pair stays wide. That pair counts as one part.
   - `ebass`: 8th notes on the root, locked to the kick.
   - `rock` drums: 8th-note hats in the verse, open hat or ride in the chorus, a crash (49) on beat 1 of every section with a tom fill into it.
-  - Royal road IV–V–iii–vi (in C: Fmaj7 → G7 → Em7 → Am), and vi–IV–V–I.
   - Last chorus up a half or whole step.
-  - `eguitar` arpeggios for verses.
-  - Synth `distguitar` for wide double-tracked walls and `vel` palm mutes; recorded `heavy` or `crunch` for amp character on leads and riffs, `chug` for recorded palm mutes (`clean` for verse arpeggios). Mixing synth and recorded guitars works.
-- **Ballad** (`piano`, `strings`, `violin`, `guitar`, `pad`, `harp`, `glock`, `timpani`, `noise`):
-  - 60–80 BPM. Verse 1 is `piano` alone: roots in the left hand, broken chords in the right.
-  - `strings` come in at the chorus with whole-note chords (`vel` 0.3–0.4, so they swell in), and a `violin` counter-line fills the gaps in the melody.
+  - `eguitar` or `clean` arpeggios for verses.
+  - Synth `distguitar` for wide double-tracked walls and `vel` palm mutes; recorded `heavy` or `crunch` for amp character on leads and riffs, `chug` for recorded palm mutes. Mixing synth and recorded guitars works.
+- **Ballad** (60–80 BPM; `piano`, `strings`, `violin`, `pizz`, `guitar`, `pad`, `harp`, `glock`, `timpani`, `noise`):
+  - Progressions (in C): the Canon I–V–vi–iii–IV–I–IV–V; a falling bass I–V/7–vi–I/5–IV (C → G/B → Am → C/G → F); vi–IV–I–V; IV–V–iii–vi; IV–iv–I (F → Fm → C) for a sad turn.
+  - Verse 1 is `piano` alone: roots in the left hand, broken chords in the right.
+  - `strings` come in at the chorus with whole-note chords (`vel` 0.3–0.4, so they swell in), and a `violin` counter-line fills the gaps in the melody; `pizz` for a lighter verse.
   - Drums come in at verse 2 with the side stick (37) on 2 and 4; the full kit and a crash arrive in the chorus.
   - `guitar` strum: put a chord's notes 1–2 ticks apart, lowest string first.
-  - Royal road IV–V–iii–vi, and the Canon progression I–V–vi–iii–IV–I–IV–V.
   - Into the last chorus, a `noise` swell (one note held for the bar before) or a `timpani` roll (fast repeated hits); that chorus goes up a whole step. End on a held chord.
   - `harp` for glissandi (fast runs, a 16th or 32nd apart) and `glock` for music-box hooks an octave or two above the melody.
-- **Mellow piano:** `vel` 0.3–0.45 at 60–80 BPM.
-- **A worked full song:** `examples/kawaii-bass.alp.json` in the AgentLoops repo. It's 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
+### A worked example
+
+`examples/kawaii-bass.alp.json` in the AgentLoops repo is a full song: 52 bars, 8 script channels and a lyric sheet; the user can open a copy from the studio Browser. A minimal one-bar drop:
 
 ```json
 {
@@ -288,4 +313,4 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 
 ## Not supported yet
 
-Say so rather than trying: clocked mode (only barrier mode; of `clock` only `bpm` is read), clip types other than `pattern`, automation, controllers, memory, Inbox/`human` voices, and the generators `human`, `replay`, `project`, `layer`, `remote.agent`. `onFail: "fallback"`, send mode `summary` (needs the not-yet-built Compressor), processors other than the four `fx.*` above, `tests` and `agentloops test`, `serve`, HTTP transport for this server, and the runtime MCP server for agents inside a run. MCP tool servers are stdio only. `script` code is sandboxed: no fs, network, `require` or `import`, and `setInterval` is not provided.
+Say so rather than trying: clocked mode (only barrier mode; of `clock` only `bpm` is read), clip types other than `pattern`, automation (including pitch glides and bends on a note), controllers, memory, Inbox/`human` voices, and the generators `human`, `replay`, `project`, `layer`, `remote.agent`. `onFail: "fallback"`, send mode `summary` (needs the not-yet-built Compressor), processors other than the four `fx.*` above, `tests` and `agentloops test`, `serve`, HTTP transport for this server, and the runtime MCP server for agents inside a run. MCP tool servers are stdio only. `script` code is sandboxed: no fs, network, `require` or `import`, and `setInterval` is not provided.

@@ -131,7 +131,7 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
       const q = new URL(req.url ?? "/", "http://x").searchParams, p = host.st!.p, chs: any[] = p.channels ?? [], solo = chs.some((c) => c.solo);
       const plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
       const on = new Set(chs.filter((c) => !c.mute && (!solo || c.solo)).map((c) => c.id));
-      const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len, vel: n.vel, pan: n.pan }));
+      const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len, vel: n.vel, pan: n.pan, text: n.text }));
       json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes,
         channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain })) });
     },

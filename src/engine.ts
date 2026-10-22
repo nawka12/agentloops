@@ -132,7 +132,7 @@ export async function render(proj: { p: any; dir: string }, opts: RunOpts = {}) 
     if (v.n.slide && prev) { await prev.done.catch(() => {}); v.base = prev.messages ?? []; }
     else v.base = def.context === "persistent" || def.context === "per-pattern" ? [...(v.ch.hist[hk] ?? [])] : [];
     v.startMs = Date.now() - run.start;
-    emit({ type: "voice", phase: "start", channel: def.id, voice: v.seq, key: v.n.key, vel: v.n.vel, pan: v.n.pan, tick: v.n.start, len: v.n.len, bus: def.output ?? "master" });
+    emit({ type: "voice", phase: "start", channel: def.id, voice: v.seq, key: v.n.key, vel: v.n.vel, pan: v.n.pan, text: v.n.text, tick: v.n.start, len: v.n.len, bus: def.output ?? "master" });
     const gen = def.generator;
     v.cacheKey = sha([gen.plugin, gen.params ?? {}, v.prompt, v.notePar, v.inFrames.map(frameHash), v.seed, v.base.length ? sha(v.base) : "", run.trigger.payload]);
     const cached = run.cache === "prefer" ? takes.findCached(v.cacheKey) : null;

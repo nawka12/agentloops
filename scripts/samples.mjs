@@ -70,6 +70,9 @@ const SETS = {
   // The loop starts late: the player changes bow (C5 p has a 100 ms gap at 3.6 s), and the high p notes are still swelling at 2.5 s.
   violin: { kind: "held", loop: [4, 6.5], tune: 10, oct: "harm", roots: [55, 57, 60, 64, 67, 69, 72, 76, 79, 81, 84, 88, 91, 93, 96],
     src: (m, l) => `Strings/Solo Violin/Arco Vib/LLVln_ArcoVib_${pianoName(m)}_${l === "mf" ? "f" : "p"}.wav` },
+  // Plucked, first round-robin. Above A5 only f was recorded, so those roots have one dynamic. The C7 file reads as C6 in the octave check, so A6 covers the top.
+  pizz: { kind: "decay", sec: 1.5, tune: 10, oct: "harm", roots: [55, 57, 60, 64, 67, 69, 72, 76, 79, 81, 88, 93],
+    src: (m, l) => `Strings/Solo Violin/Pizz/LLVln_Pizz_${pianoName(m)}_${l === "mf" || m > 81 ? "f" : "p"}_RR1.wav` },
   // One dynamic per note (a few only exist as f). G1 (mp) is left out: noise bursts at 2.3 and 3.7 s as loud as the note; E1 covers it.
   harp: { kind: "decay", sec: 4, tune: 10, oct: "harm", layers: ["mf"],
     roots: [28, 35, 38, 41, 45, 48, 52, 55, 59, 62, 65, 69, 72, 76, 79, 83, 86, 89, 93, 95, 98, 101],
