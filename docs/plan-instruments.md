@@ -1,6 +1,6 @@
 # Plan: more instruments
 
-Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slice C merged 2026-10-20. Slice D built on `slice-11-ballad` and approved 2026-10-20. Question 4 under [Decide before slice C](#decide-before-slice-c-2026-10-20) is still open for D.
+Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slices C and D merged 2026-10-20 (all questions under [Decide before slice C](#decide-before-slice-c-2026-10-20) are answered). Slice E merged 2026-10-22.
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
 
@@ -203,6 +203,15 @@ D's `noise` is the FX entry: filtered noise centred on the key, for risers and s
 
 Engine change E needs:
 - **Tempo for `wobble`:** add `bpm` to `VoiceSound` (main.ts has `bpm()`) and pass it into `make`; `renderWav` passes `s.bpm`.
+
+- [x] `choir`, `reese`, `acid`, `wobble`, `808`, `brass`, `flute` as `SUSTAIN` entries; `marimba` as a one-shot (added to `ONESHOT`)
+- [x] `bpm` in `VoiceSound`, passed from main.ts into `make` (default 120) and from `renderWav` (`s.bpm`)
+- [x] Families: `choir` in pad; `reese`, `acid`, `wobble`, `808` in bass; `brass`, `flute` in lead; `marimba` in mallets. All added to the validator list in `src/project.ts`
+- [x] Manual: a line per new sound
+- [x] Export test covers the new sounds (it takes them from `SOUNDS`)
+- [ ] You listen in the studio
+
+As built: `peak`s were set by the export test (all eight within +3 / -4 dB of `triangle`): `acid` 0.06, `808` 0.1 falling to 0.06 (it rings for the note, but the sine is loud), `flute` 0.09, `brass` 0.1, `choir` 0.1 (its vowel filters take most of the level, so each gets a gain of 3), `reese` and `wobble` 0.1. `808` is not pumped (the plan didn't say) and shares the existing `TANH` curve. `wobble`'s LFO starts in phase with the note and runs at `bpm / 60 * 2` Hz; `bpm` is a trailing argument of `make`, `sustain` and `note`. `marimba` skips its 10× partial above 20 kHz. `choir`'s vibrato fades in over 0.6 s and `flute`'s starts at 0.2 s. `vel` does nothing for any of the eight.
 
 ### F (optional): demo songs
 

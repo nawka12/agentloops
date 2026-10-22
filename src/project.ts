@@ -43,7 +43,7 @@ export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
 const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
 // channel `sound` (sonification instrument); keep in sync with SOUNDS in ui/sound.ts
-export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax", "trumpet", "trombone", "epiano", "organ", "upright", "vibes", "brushes", "eguitar", "distguitar", "ebass", "rock", "guitar", "pad", "noise", "strings", "violin", "harp", "glock", "timpani"];
+export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax", "trumpet", "trombone", "epiano", "organ", "upright", "vibes", "brushes", "eguitar", "distguitar", "ebass", "rock", "guitar", "pad", "noise", "strings", "violin", "harp", "glock", "timpani", "choir", "reese", "acid", "wobble", "808", "brass", "flute", "marimba"];
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
 

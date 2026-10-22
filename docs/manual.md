@@ -174,7 +174,14 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `guitar` (a steel-string acoustic, keys 40–88): a bright plucked string with a wooden body and a touch of reverb. `vel` brightens it a little. A long note rings for its length and the top octave fades sooner. Strum by offsetting a chord's notes.
     - `pad` (a warm pad, keys 36–84): three detuned saws that fade in over 0.6 s while the filter opens over a couple of seconds, with a long release and lots of reverb. `vel` does nothing. Darker than `supersaw` and not pumped; a long note keeps sounding for its length.
     - `noise` (a riser, any key): filtered noise centred on the key. Over the note's length it swells in from silence while the band rises an octave, then cuts off at the note's end, so one long note is a reverse-cymbal swell into the next section. `vel` does nothing.
-  - **One-shot:** `pluck` (filter snap) and `bell` (FM, long ring).
+    - `choir` (an "ah" choir, keys 36–84): a saw through three vowel filters with vibrato that fades in; slow attack, long release, lots of reverb. `vel` does nothing. A long note keeps sounding for its length. Not pumped.
+    - `reese` (a drum-and-bass bass, keys 24–55): two detuned saws through a slowly drifting lowpass, pumped by the kick. `vel` does nothing; a long note holds and keeps drifting.
+    - `acid` (a 303 bass, keys 24–60): a saw through a resonant lowpass that drops from bright to dark on every note, so repeated 16ths squelch. `vel` does nothing. A long note holds at the dark end. Not pumped.
+    - `wobble` (a dubstep bass, keys 24–55): a saw whose lowpass is swept by an LFO in 8th notes at the song's tempo (it follows the tempo knob), pumped by the kick. `vel` does nothing. A long note wobbles for its length.
+    - `808` (a sub bass, keys 24–60): a sine that drops an octave in 30 ms (the punch), lightly saturated. `vel` does nothing. A long note rings for its length. Not pumped.
+    - `brass` (a synth brass lead, keys 48–84): a saw whose filter opens in 80 ms (the blare). `vel` does nothing. A long note holds.
+    - `flute` (keys 60–96): a sine with a little breath noise and vibrato that arrives after about 0.3 s. `vel` does nothing. A long note holds and its vibrato keeps going.
+  - **One-shot:** `pluck` (filter snap), `bell` (FM, long ring) and `marimba` (a wooden knock over a short tone, keys 48–96; `vel` does nothing, and a long note does not ring longer).
   - **Sampled:** real recordings, repitched; a key beyond the range (more than 3 semitones past the ends) plays an octave in. A note's `vel` is its dynamics: below 0.4 is the soft layer, and the default 0.5 is normal loudness.
     - `piano` (a grand piano, keys 21–108) rings out on its own and fades at the note's end.
     - `sax` (an alto sax, keys 49–79), `trumpet` (keys 52–85) and `trombone` (keys 40–70, the low horn) loop the steady part of the note, so a long note holds for its length.

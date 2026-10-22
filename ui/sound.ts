@@ -8,9 +8,9 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass"], guitar: ["eguitar", "distguitar", "guitar"], pad: ["supersaw", "pad"], mallets: ["pluck", "bell", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass", "reese", "acid", "wobble", "808"], guitar: ["eguitar", "distguitar", "guitar"], pad: ["supersaw", "pad", "choir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
-const ONESHOT = new Set(["pluck", "bell", "drums", "brushes", "rock"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
+const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
 // Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft; `soft: false` = mf only). The recording carries its own decay, so the envelope only
 // holds it and releases at the note's end. A held sound has a `loop` [start, end] (s, the same for all its files; keep in sync with scripts/samples.mjs): each file ends at the
@@ -107,7 +107,7 @@ function amp(r: Rig, ch: string, p: number, lvl: number) {
 
 // Sustained instruments: oscillators → filter → envelope. Released by the later of the note's end and the voice's end (live),
 // or at the note's end (offline).
-type Sus = { make: (r: Rig, f: number, t: number, vel: number, p: number, dur: number) => { oscs: AudioScheduledSourceNode[]; head: AudioNode }; peak: number; hold: number; a: number; rel: number; pumped?: boolean; wet?: number; amp?: boolean }; // amp: plays into its channel's amp
+type Sus = { make: (r: Rig, f: number, t: number, vel: number, p: number, dur: number, bpm: number) => { oscs: AudioScheduledSourceNode[]; head: AudioNode }; peak: number; hold: number; a: number; rel: number; pumped?: boolean; wet?: number; amp?: boolean }; // amp: plays into its channel's amp
 const chain = (oscs: AudioScheduledSourceNode[], head: AudioNode) => ({ oscs, head });
 const SUSTAIN: Record<string, Sus> = {
   triangle: { make: (r, f) => { const o = osc(r, "triangle", f); return chain([o], o); }, peak: 0.16, hold: 0.07, a: 0.02, rel: 0.45 },
@@ -206,10 +206,75 @@ const SUSTAIN: Record<string, Sus> = {
     },
     peak: 2.6, hold: 2.6, a: 0.02, rel: 0.08, wet: 0.2,
   },
+  // choir "ah": a saw through three vowel bandpasses (800 / 1150 / 2900 Hz, each weaker than the last) with vibrato that fades in; slow attack, long release, reverb. Not pumped
+  choir: {
+    make: (r, f, t) => {
+      const o = osc(r, "sawtooth", f), lfo = osc(r, "sine", 5.5), depth = gain(r, 0), sum = gain(r);
+      depth.gain.setValueAtTime(0, t); depth.gain.linearRampToValueAtTime(15, t + 0.6); lfo.connect(depth); depth.connect(o.detune);
+      [[800, 1], [1150, 0.5], [2900, 0.25]].forEach(([fr, v]) => { const bp = filt(r, "bandpass", fr, 6), g = gain(r, v * 3); o.connect(bp); bp.connect(g); g.connect(sum); });
+      return chain([o, lfo], sum);
+    },
+    peak: 0.1, hold: 0.09, a: 0.25, rel: 0.7, wet: 0.45,
+  },
+  // DnB bass: two saws ±12 cents through a lowpass that drifts (0.3 Hz LFO, 150-850 Hz), pumped by the kick
+  reese: {
+    make: (r, f, t) => {
+      const lp = filt(r, "lowpass", 500, 1), lfo = osc(r, "sine", 0.3), ld = gain(r, 350), oscs = [-12, 12].map((d) => { const o = osc(r, "sawtooth", f, d); o.connect(lp); return o; });
+      lfo.connect(ld); ld.connect(lp.frequency);
+      return chain([...oscs, lfo], lp);
+    },
+    peak: 0.1, hold: 0.09, a: 0.01, rel: 0.1, pumped: true,
+  },
+  // 303: a saw through a resonant lowpass (Q 12) that drops from 2.5 kHz to 300 Hz on each note
+  acid: {
+    make: (r, f, t) => {
+      const o = osc(r, "sawtooth", f), lp = filt(r, "lowpass", 300, 12);
+      lp.frequency.setValueAtTime(2500, t); lp.frequency.exponentialRampToValueAtTime(300, t + 0.2); o.connect(lp);
+      return chain([o], lp);
+    },
+    peak: 0.06, hold: 0.05, a: 0.003, rel: 0.06,
+  },
+  // dubstep bass: a saw through a lowpass swept (100-1100 Hz) by an LFO in 8th notes at the song's tempo, pumped
+  wobble: {
+    make: (r, f, t, vel, p, dur, bpm) => {
+      const o = osc(r, "sawtooth", f), lp = filt(r, "lowpass", 600, 5), lfo = osc(r, "sine", (bpm / 60) * 2), ld = gain(r, 500);
+      lfo.connect(ld); ld.connect(lp.frequency); o.connect(lp);
+      return chain([o, lfo], lp);
+    },
+    peak: 0.1, hold: 0.09, a: 0.01, rel: 0.1, pumped: true,
+  },
+  // 808: a sine at the key that drops from +12 semitones in 30 ms, soft saturation; rings for the note
+  "808": {
+    make: (r, f, t) => {
+      const o = osc(r, "sine", f), pre = gain(r, 0.35), ws = r.c.createWaveShaper();
+      o.frequency.setValueAtTime(f * 2, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.03); ws.curve = TANH; o.connect(pre); pre.connect(ws);
+      return chain([o], ws);
+    },
+    peak: 0.1, hold: 0.06, a: 0.003, rel: 0.15,
+  },
+  // brass lead: a saw whose lowpass opens from 400 Hz to 3 kHz over 80 ms
+  brass: {
+    make: (r, f, t) => {
+      const o = osc(r, "sawtooth", f), lp = filt(r, "lowpass", 400);
+      lp.frequency.setValueAtTime(400, t); lp.frequency.exponentialRampToValueAtTime(3000, t + 0.08); o.connect(lp);
+      return chain([o], lp);
+    },
+    peak: 0.1, hold: 0.08, a: 0.02, rel: 0.12, wet: 0.2,
+  },
+  // flute: a sine with bandpassed breath noise (at twice the pitch) and vibrato that comes in after 0.3 s
+  flute: {
+    make: (r, f, t) => {
+      const o = osc(r, "sine", f), lfo = osc(r, "sine", 5), depth = gain(r, 0), n = r.c.createBufferSource(), bp = filt(r, "bandpass", f * 2, 2), ng = gain(r, 0.3), sum = gain(r);
+      depth.gain.setValueAtTime(0, t + 0.2); depth.gain.linearRampToValueAtTime(14, t + 0.5); lfo.connect(depth); depth.connect(o.detune);
+      n.buffer = r.noise; n.loop = true; n.connect(bp); bp.connect(ng); ng.connect(sum); o.connect(sum);
+      return chain([o, lfo, n], sum);
+    },
+    peak: 0.09, hold: 0.07, a: 0.05, rel: 0.15, wet: 0.25,
+  },
 };
 /** start a sustained tone at t; returns its gain and sources so the caller can release it */
-function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number, p = 0, dur = 0) {
-  const s = SUSTAIN[kind] ?? SUSTAIN.triangle, { oscs, head } = s.make(r, hz(key), t, vel, p, dur), g = gain(r, 0.0001), h = t + Math.max(0.35, s.a + 0.1); // the hold point comes after the peak, even for a slow attack
+function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number, p = 0, dur = 0, bpm = 120) {
+  const s = SUSTAIN[kind] ?? SUSTAIN.triangle, { oscs, head } = s.make(r, hz(key), t, vel, p, dur, bpm), g = gain(r, 0.0001), h = t + Math.max(0.35, s.a + 0.1); // the hold point comes after the peak, even for a slow attack
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(Math.max(0.0002, s.peak * lvl), t + s.a); g.gain.exponentialRampToValueAtTime(Math.max(0.0001, s.hold * lvl), h);
   head.connect(g); g.connect(s.pumped ? r.pump : r.out); if (s.wet) send(r, g, s.wet);
   oscs.forEach((x) => x.start(t));
@@ -276,8 +341,8 @@ const release = (v: Voice, now: number, at: number) => {
   else { g.cancelScheduledValues(Math.max(now, at)); g.setValueAtTime(Math.max(0.0001, g.value), Math.max(now, at)); } // ponytail: older engines jump to the current level
   g.exponentialRampToValueAtTime(0.0001, at + v.rel); v.oscs.forEach((x) => x.stop(at + v.rel + 0.05));
 };
-/** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise` */
-function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0) {
+/** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise`, `bpm` only to `wobble` */
+function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120) {
   if (SUSTAIN[kind]?.amp) { // into the channel's amp, which sets the level and pan. An export note's own bus is rewired into it, so it is still cut loose when the note ends
     const a = amp(r.root, ch, p, lvl);
     if (r.out === r.root.out) r = { ...r, out: a }; else { r.out.disconnect(); r.out.connect(a); }
@@ -285,13 +350,13 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0
   }
   if (p) { const o = pan(r, p), q = pan(r, p); o.connect(r.out); q.connect(r.pump); r = { ...r, out: o, pump: q }; } // a panned note plays into its own panners (the reverb send stays centred; `duck` stays the real pump)
   if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind);
-  if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : bell)(r, hz(key), t, lvl); return null; }
+  if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : kind === "marimba" ? marimba : bell)(r, hz(key), t, lvl); return null; }
   if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel);
-  return sustain(r, kind, key, t, lvl, vel, p, dur);
+  return sustain(r, kind, key, t, lvl, vel, p, dur, bpm);
 }
 
 const tones = new Map<string, Voice & { until: number }>();
-export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string };
+export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number };
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
 // Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
 // main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
@@ -311,7 +376,7 @@ export function voiceStart(id: string, key: number, plugin: string, o: VoiceSoun
   if (!live() || tones.has(id)) return;
   const kind = kindOf(plugin, o.sound);
   if (!ONESHOT.has(kind) && tones.size >= MAX) return;
-  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur);
+  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm);
   stats.started++;
   if (!v) { stats.stopped++; if (KITS.includes(kind) && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
@@ -338,6 +403,13 @@ function bell(r: Rig, f: number, t: number, lvl: number) {
   idx.gain.setValueAtTime(f * 2.2, t); idx.gain.exponentialRampToValueAtTime(f * 0.02, t + 0.9);
   mod.connect(idx); idx.connect(car.frequency); car.connect(g); g.connect(r.pump); send(r, g, 0.4);
   for (const o of [car, mod]) { o.start(t); o.stop(t + 1.6); }
+}
+/** one-shot marimba: a sine plus 4× and 10× partials (skipped past 20 kHz) that fade much faster than the fundamental: a wooden knock, then the tone */
+function marimba(r: Rig, f: number, t: number, lvl: number) {
+  [[1, 0.3, 0.8], [4, 0.15, 0.2], [10, 0.06, 0.05]].forEach(([m, peak, dur]) => {
+    if (f * m > 20000) return;
+    const o = osc(r, "sine", f * m), g = hit(r, peak * lvl, t, dur, 0.002); o.connect(g); g.connect(r.pump); send(r, g, 0.25); o.start(t); o.stop(t + dur + 0.05);
+  });
 }
 /** a sampled cymbal (file `ride/51`, `cymbals/49-p`…, from fileOf), rung out whole; skipped until its buffer has loaded. ponytail: no choke, so 16th-note ride patterns pile up */
 function cymbal(r: Rig, f: string, t: number, lvl: number, vel: number) {
@@ -424,7 +496,7 @@ export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
   const upTo = (until: number) => { for (; i < notes.length && sec(notes[i].start) < until; i++) {
     const n = notes[i], t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
     b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
-    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len));
+    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
     let left = made.length;
     if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };
