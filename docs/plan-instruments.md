@@ -160,7 +160,7 @@ Goal: four recorded electric guitars next to C's synth ones (`distguitar`, `egui
 - [x] Levels: `heavy`, `crunch`, `chug` within ±2 dB of `distguitar`, `clean` of `eguitar`, in the export test
 - [x] Attribution: `ui/samples/NOTICE`, README, the sample sources table
 - [x] Manual: a line per sound, plus a J-rock tip on mixing synth and recorded guitars
-- [ ] You listen in the studio
+- [x] You listen in the studio (approved 2026-10-22)
 
 As built: the sources are 3.1 s renders of a chromatic soundfont, one per key, so the script takes every third. The files are cut to 3 s with a fade (a note longer than that fades out at the recording's end), 17 files and 0.52 MB per sound (2.1 MB in all; `ui/samples` is 16 MB). The distorted renders are clipped, so the 4× decode used by the script's checks shows inter-sample peaks 1.4 dB over full scale when normalized to -3 dBFS: the new sets are normalized to -9 dBFS instead (`to` in `SETS`), and `flat` skips the attack check, since a sustained render's loudest 10 ms can be anywhere. The pitch check passed unchanged (worst 22 cents, `clean` at 43); nothing is retuned. `SAMPLED` peaks, from the export test's level line (key 60, a 1 s note over a 2 s bar; the master limiter makes level vs. peak nonlinear above about 0.5): `heavy` 0.26, `crunch` 0.39, `chug` 1.05, `clean` 0.58 — levels -22.9, -22.9, -23.2 and -22.7 dB against `distguitar` -22.9 and `eguitar` -23.2. A double-tracked pair is one recording detuned and delayed, narrower than the synth's separate bursts (`ponytail:` in `sampled()`); real second takes would fix it.
 
@@ -224,7 +224,7 @@ Engine change E needs:
 - [x] Families: `choir` in pad; `reese`, `acid`, `wobble`, `808` in bass; `brass`, `flute` in lead; `marimba` in mallets. All added to the validator list in `src/project.ts`
 - [x] Manual: a line per new sound
 - [x] Export test covers the new sounds (it takes them from `SOUNDS`)
-- [ ] You listen in the studio
+- [x] You listen in the studio (approved 2026-10-22)
 
 As built: `peak`s were set by the export test (all eight within +3 / -4 dB of `triangle`): `acid` 0.06, `808` 0.1 falling to 0.06 (it rings for the note, but the sine is loud), `flute` 0.09, `brass` 0.1, `choir` 0.1 (its vowel filters take most of the level, so each gets a gain of 3), `reese` and `wobble` 0.1. `808` is not pumped (the plan didn't say) and shares the existing `TANH` curve. `wobble`'s LFO starts in phase with the note and runs at `bpm / 60 * 2` Hz; `bpm` is a trailing argument of `make`, `sustain` and `note`. `marimba` skips its 10× partial above 20 kHz. `choir`'s vibrato fades in over 0.6 s and `flute`'s starts at 0.2 s. `vel` does nothing for any of the eight.
 
