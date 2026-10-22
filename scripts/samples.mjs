@@ -1,5 +1,5 @@
 // Rebuilds the note samples in ui/samples/: Salamander Grand Piano V3 (CC BY 3.0, Alexander Holm), University of Iowa Musical
-// Instrument Samples, and VSCO 2 Community Edition (CC0). The MP3s are committed; this script only exists so they can be rebuilt.
+// Instrument Samples, VSCO 2 Community Edition (CC0), and the Musyng Kite guitars (CC BY-SA 3.0). The MP3s are committed; this script only exists so they can be rebuilt.
 // Needs ffmpeg, curl, tar.
 // Usage: node scripts/samples.mjs [cacheDir [sound...]] (no sounds = all; the others' MP3s are left alone).
 // Downloads land in cacheDir and are only read by ffmpeg/tar, never run.
@@ -21,6 +21,7 @@ const PIANO_URL = "https://freepats.zenvoid.org/Piano/SalamanderGrandPiano/Salam
 const PIANO_DIR = "SalamanderGrandPianoV3_44.1khz16bit/44.1khz16bit/";
 const IOWA = "https://theremin.music.uiowa.edu/sound%20files/MIS/";
 const VSCO = (path) => `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/${path.split("/").map(encodeURIComponent).join("/")}`;
+const MK = (inst) => (m) => `https://gleitz.github.io/midi-js-soundfonts/MusyngKite/${inst}-mp3/${["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"][m % 12]}${Math.floor(m / 12) - 1}.mp3`;
 const low = (m) => pianoName(m - 12); // the VSCO section and glock folders name every note an octave below how it sounds (measured; see oct)
 const hzOf = (m) => 440 * 2 ** ((m - 69) / 12);
 const TAIL = (sec) => `atrim=duration=${sec},afade=t=out:st=${sec * 0.75}:d=${sec * 0.25}`;
@@ -32,8 +33,8 @@ const PIANO_CHAIN = "silenceremove=start_periods=1:start_threshold=-50dB:start_s
 // note, midi notes the file lacks] for a file with noise blips that would pass for notes, or a note that was never recorded.
 // held = a held note, looped (see held()), retuned to equal temperament; decay = struck, cut at sec with a fade (attack check).
 // tune = cents off at which a note is retuned; pitch false = unpitched. loop: [ls, le] s, the loop window of every file of a held sound.
-// VSCO sets have one file per note: src(midi, layer) is its path. layers: which of mf ("<root>.mp3") and pp ("<root>-p.mp3") exist.
-// oct: also check the octave (see f0), "harm" for harmonic sounds, "peak" for the glock and timpani.
+// VSCO sets have one file per note: src(midi, layer) is its path (a full URL for any other host: the Musyng Kite guitars). layers: which of mf ("<root>.mp3") and pp ("<root>-p.mp3") exist.
+// flat: no attack check. oct: also check the octave (see f0), "harm" for harmonic sounds, "peak" for the glock and timpani.
 const SETS = {
   sax: { kind: "held", loop: [1, 2.2], tune: 3, roots: roots(49, 79), url: (l, r) => `${IOWA}Woodwinds/altosaxophone/AltoSax.Vib.${l}.${r}.aiff`,
     files: [["Db3B3", 49, 11], ["C4B4", 60, 12], ["C5Ab5", 72, 9]] },
@@ -78,6 +79,11 @@ const SETS = {
   // Five drums, each at its measured pitch (the (1,1) mode: F2 +46, B2 -20, C#3 +48, E3 +43, G3 -45 cents), retuned to the nearest note.
   timpani: { kind: "decay", sec: 4, tune: 3, oct: "peak", roots: [41, 47, 49, 52, 55],
     src: (m, l) => `Percussion/Timpani/Timpani${[41, 47, 49, 52, 55].indexOf(m) + 1}_Hit_${l === "mf" ? "v3" : "v1"}_rr1_Sum.wav` },
+  // Recorded electric guitars: one 3.1 s render per key of a chromatic soundfont (Musyng Kite, mf), every minor third E2-E6.
+  heavy: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("distortion_guitar") },
+  crunch: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("overdriven_guitar") },
+  chug: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("electric_guitar_muted") },
+  clean: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("electric_guitar_clean") },
 };
 
 const sh = (cmd, args, input) => {
@@ -100,11 +106,12 @@ function fetchTo(url, name = decodeURIComponent(url.split("/").pop())) {
 
 // Two passes: volumedetect finds the peak, then the gain brings it to -3 dBFS. The cut goes before -i: as an output
 // option it would apply after the filters, and silenceremove has already shifted the timeline by then.
+// `to` (a set's, default -3) is the peak the gain brings it to: the clipped guitars overshoot between samples, so they sit lower.
 // `loud` sets the mean level (dB) instead: a stick's click sets a cymbal hit's peak, so peak-normalized rides came out with pp 10 dB over mf.
-function encode(src, cut, chain, dest, loud) {
+function encode(src, cut, chain, dest, loud, to = -3) {
   const input = [...cut, "-i", src];
   const det = ff([...input, "-af", `${chain},volumedetect`, "-f", "null", "-"]).stderr.toString();
-  const peak = +/max_volume: (-?[\d.]+) dB/.exec(det)[1], gain = loud == null ? -3 - peak : loud - +/mean_volume: (-?[\d.]+) dB/.exec(det)[1];
+  const peak = +/max_volume: (-?[\d.]+) dB/.exec(det)[1], gain = loud == null ? to - peak : loud - +/mean_volume: (-?[\d.]+) dB/.exec(det)[1];
   if (peak + gain > -1) throw new Error(`${dest}: would peak at ${(peak + gain).toFixed(1)} dBFS`);
   ff([...input, "-af", `${chain},volume=${gain.toFixed(2)}dB`, ...ENC, dest]);
 }
@@ -148,9 +155,9 @@ if (needed.length) {
 }
 
 const made = [];
-const emit = (sound, m, suffix, src, cut, chain, maxSec, loud) => {
+const emit = (sound, m, suffix, src, cut, chain, maxSec, loud, to) => {
   const dest = join(out, sound, `${m}${suffix}.mp3`);
-  encode(src, cut, chain, dest, loud);
+  encode(src, cut, chain, dest, loud, to);
   made.push({ sound, m, file: dest, maxSec, src, cut, chain });
 };
 
@@ -192,9 +199,9 @@ for (const [sound, S] of Object.entries(SETS)) {
   if (!wanted(sound)) continue;
   fresh(sound);
   for (const [layer, suffix] of [["mf", ""], ["pp", "-p"]].filter(([l]) => (S.layers ?? ["mf", "pp"]).includes(l))) {
-    const note = (m, file, cut) => S.kind === "held" ? held(sound, m, suffix, file, cut, S) : emit(sound, m, suffix, file, cut, S.src ? TAIL(S.sec) : DECAY(S.sec, S.start), S.sec, S.loud);
+    const note = (m, file, cut) => S.kind === "held" ? held(sound, m, suffix, file, cut, S) : emit(sound, m, suffix, file, cut, S.src ? TAIL(S.sec) : DECAY(S.sec, S.start), S.sec, S.loud, S.to);
     for (const m of S.src ? S.roots : []) {
-      const file = fetchTo(VSCO(S.src(m, layer)));
+      const path = S.src(m, layer), file = path.startsWith("http") ? fetchTo(path, `${sound}-${m}.mp3`) : fetchTo(VSCO(path));
       note(m, file, S.kind === "held" ? [] : ["-ss", (onset(decode(file, [], SR), SR) / SR).toFixed(4)]);
     }
     for (const [range, first, count, lo = first, hi = first + count] of S.files ?? []) {
@@ -319,7 +326,7 @@ for (const { sound, m, file, maxSec } of made) {
     if (drift > DRIFT) throw new Error(`${file}: the loop ends ${drift.toFixed(1)} dB off its start`);
     s.loopdb = Math.max(s.loopdb ?? 0, off4); s.gap = Math.max(s.gap ?? 0, off10); s.drift = Math.max(s.drift ?? 0, drift);
   }
-  if (kind === "decay") { // a struck note: its loudest 10 ms is in the first 0.3 s (a cut that starts mid-tail has no attack; the low vibes bars swell for 0.2 s)
+  if (kind === "decay" && !SETS[sound].flat) { // (flat: a sustained soundfont render, whose loudest 10 ms is anywhere) a struck note: its loudest 10 ms is in the first 0.3 s (a cut that starts mid-tail has no attack; the low vibes bars swell for 0.2 s)
     const w = RATE / 100;
     let top = 0, at = 0;
     for (let i = 0; i + w <= x.length; i += w) { let e = 0; for (let j = i; j < i + w; j++) e += x[j] * x[j]; if (e > top) { top = e; at = i / RATE; } }

@@ -191,6 +191,10 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `glock` (a glockenspiel, keys 79–108, music-box high) rings out; one dynamic.
     - `timpani` (five drums, keys 41–58) is one hit that rings out. A roll is fast repeated hits (16ths or 32nds), swelling with `vel`.
     - `upright` (a plucked double bass, keys 28–67) decays on its own, so a long note just fades.
+    - `heavy` (a recorded distorted guitar, keys 40–88) rings out for about 3 s, then fades at the recording's end, even in a longer note. One dynamic, so `vel` only sets loudness.
+    - `crunch` (a recorded overdriven guitar, keys 40–88): the same, with less drive than `heavy`.
+    - `chug` (a recorded palm-muted electric guitar, keys 40–88): short, dark notes; one dynamic, `vel` only sets loudness.
+    - `clean` (a recorded clean electric guitar, keys 40–88): rings out for about 3 s, then fades at the recording's end; `vel` only sets loudness.
     - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
     - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
@@ -237,6 +241,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Royal road IV–V–iii–vi (in C: Fmaj7 → G7 → Em7 → Am), and vi–IV–V–I.
   - Last chorus up a half or whole step.
   - `eguitar` arpeggios for verses.
+  - Synth `distguitar` for wide double-tracked walls and `vel` palm mutes; recorded `heavy` or `crunch` for amp character on leads and riffs, `chug` for recorded palm mutes (`clean` for verse arpeggios). Mixing synth and recorded guitars works.
 - **Ballad** (`piano`, `strings`, `violin`, `guitar`, `pad`, `harp`, `glock`, `timpani`, `noise`):
   - 60–80 BPM. Verse 1 is `piano` alone: roots in the left hand, broken chords in the right.
   - `strings` come in at the chorus with whole-note chords (`vel` 0.3–0.4, so they swell in), and a `violin` counter-line fills the gaps in the melody.

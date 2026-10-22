@@ -58,6 +58,7 @@ Notes already carry `vel` (0–1, default 0.5, `src/project.ts:249`). It means a
 | `piano` | Salamander Grand Piano (recommended), or Iowa's piano | Salamander is CC BY 3.0 (Alexander Holm). [One source](https://github.com/educandu/abcjs-soundfonts) says it's public domain since 2022, unconfirmed, so keep the attribution. Iowa: no restrictions, drier (recorded in an anechoic room) |
 | Slice B: upright bass (plucked), vibraphone, maybe muted trumpet | Iowa | As above. Check which playing styles exist before relying on them |
 | Slice D: string sections, harp, glockenspiel, timpani; maybe solo violin, suspended cymbal | [VSCO 2 Community Edition](https://github.com/sgossner/VSCO-2-CE) | CC0. Has violin, viola and cello sections (`susVib`, two layers `v1`/`v2`, plus pizz and tremolo), `Strings/Harp`, `Strings/Solo Violin`, `Percussion/Glock`, `Percussion/Timpani` (hits and `Rolls`), `VSCO 1 Percussion/varMetal/Cymbals/susp`. No drum-kit crash, china or splash |
+| Slice C2: recorded electric guitars (`heavy`, `crunch`, `chug`, `clean`) | [Musyng Kite](https://github.com/gleitz/midi-js-soundfonts) soundfont, rendered to MP3 per note (`MusyngKite/<instrument>-mp3/<Note>.mp3`) | CC BY-SA 3.0: attribution and share-alike; the trimmed files stay CC BY-SA 3.0 (`ui/samples/NOTICE`). One 3.1 s render per key, one dynamic |
 
 Iowa recorded each note at pp, mf and ff. Mellow songs want the pp and mf recordings. Iowa has only alto and soprano sax; I didn't find a free tenor with a clear license ([Weresax](https://www.kvraudio.com/product/weresax-by-karoryfer/details) is also alto, license unchecked).
 
@@ -148,6 +149,20 @@ Planned 2026-10-20, for anime-opening J-rock: 150–200 BPM, distorted guitars, 
 - [x] You listen in the studio (approved 2026-10-20, after the guitar fixes)
 
 As built: the cymbals are Iowa's stick hits on an 18" crash (49, 57), a 16" china (52) and a splash (55), at mf and pp, loudness-matched like the ride (`cymbals` in `scripts/samples.mjs`, 0.24 MB); every kit plays them, and the old noise crash is gone. The string's burst is a triangle pluck at 1/5 of the string plus noise (pure noise left high notes with weak fundamentals), and its 2-point average still shortens the top octave: E6 fades within ~0.4 s. A palm mute is a ~0.15 s chug. The open-hat choke works across channels and kits (one drummer). **After the first listen** (distorted guitars sounded thin): the double-tracked pair was one signal (the string is cached per pitch and both channels play the same ticks), so a panned string now plays its side's own take, 4 cents off and 0–8 ms late (L/R correlation 0.27, tested); each channel gets one shared amp per pan instead of a shaper per note, so chords distort together and the channel gain sits after the distortion; and the cabinet is modelled (thump 110 Hz, scoop 400 Hz, presence 2.5 kHz, 24 dB/oct above 5 kHz) after a tight input (highpass 120 Hz, push at 750 Hz). An export note's bus is rewired into the amp, so it is still cut loose when the note ends. **Release fix, for every sound:** `release()` used `cancelAndHoldAtTime`, which adds no event once the envelope has finished, so the release ramp started back at the envelope's last event and every sustained and sampled note faded across its whole length. Each voice now carries its envelope's last `[time, level]` and holds it until the note ends. Sustained sounds got about 2.5 dB louder on a 1 s note; `pluck` went from 0.13 to 0.16 to stay inside the export test's ±10 dB (its peaks hit the limiter, so it only gained 0.7 dB).
+
+### C2: recorded guitars
+
+Goal: four recorded electric guitars next to C's synth ones (`distguitar`, `eguitar`, `guitar` stay as they are), for amp character on leads and riffs.
+
+- [x] `scripts/samples.mjs`: `heavy` (distortion_guitar), `crunch` (overdriven_guitar), `chug` (electric_guitar_muted) and `clean` (electric_guitar_clean) from Musyng Kite, mf only, a root every minor third 40–88, trimmed, faded, normalized and encoded like the other struck sets
+- [x] `SAMPLED` entries (`soft: false`), the `guitar` family and the validator list
+- [x] Double-tracking: with `takes: true`, a panned sampled note detunes 4 cents by side and is 0–8 ms late, like the synth string (tested: L/R correlation 0.25 for `heavy`)
+- [x] Levels: `heavy`, `crunch`, `chug` within ±2 dB of `distguitar`, `clean` of `eguitar`, in the export test
+- [x] Attribution: `ui/samples/NOTICE`, README, the sample sources table
+- [x] Manual: a line per sound, plus a J-rock tip on mixing synth and recorded guitars
+- [ ] You listen in the studio
+
+As built: the sources are 3.1 s renders of a chromatic soundfont, one per key, so the script takes every third. The files are cut to 3 s with a fade (a note longer than that fades out at the recording's end), 17 files and 0.52 MB per sound (2.1 MB in all; `ui/samples` is 16 MB). The distorted renders are clipped, so the 4× decode used by the script's checks shows inter-sample peaks 1.4 dB over full scale when normalized to -3 dBFS: the new sets are normalized to -9 dBFS instead (`to` in `SETS`), and `flat` skips the attack check, since a sustained render's loudest 10 ms can be anywhere. The pitch check passed unchanged (worst 22 cents, `clean` at 43); nothing is retuned. `SAMPLED` peaks, from the export test's level line (key 60, a 1 s note over a 2 s bar; the master limiter makes level vs. peak nonlinear above about 0.5): `heavy` 0.26, `crunch` 0.39, `chug` 1.05, `clean` 0.58 — levels -22.9, -22.9, -23.2 and -22.7 dB against `distguitar` -22.9 and `eguitar` -23.2. A double-tracked pair is one recording detuned and delayed, narrower than the synth's separate bursts (`ponytail:` in `sampled()`); real second takes would fix it.
 
 ### D: ballad
 

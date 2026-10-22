@@ -84,4 +84,11 @@ timpani/ five timpani, single hits (Percussion/Timpani, v1 soft and v3 mf, first
         Changes made: each drum retuned to its nearest note, mixed to mono, trimmed to 4 s, faded out,
         peak-normalized, and re-encoded to mono 80 kbps MP3.
 
+heavy/, crunch/, chug/, clean/  distortion, overdriven, palm-muted and clean electric guitar (the Musyng Kite
+        soundfont's distortion_guitar, overdriven_guitar, electric_guitar_muted and electric_guitar_clean), from
+        midi-js-soundfonts (MusyngKite, generated from Musyng Kite.sfpack): https://github.com/gleitz/midi-js-soundfonts
+        Licensed under CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/
+        Changes made: one sample per 3 semitones (E2-E6), leading silence trimmed, cut to 3 s, faded out,
+        peak-normalized, and re-encoded to mono 80 kbps MP3. These files remain under CC BY-SA 3.0.
+
 The MP3s are rebuilt from the original recordings by scripts/samples.mjs.

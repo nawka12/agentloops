@@ -265,8 +265,8 @@ test("note pan: a note at pan -1 plays left only, at 1 right only", { skip: chro
   } finally { await m.client.close(); await s.close(); }
 });
 
-test("double-track: two distguitar channels panned apart stay two guitars, not one in the middle", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
-  const ch = (id: string) => ({ id, name: id, sound: "distguitar", polyphony: 4, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [40, 47, 52].map((key) => ({ key, name: "n", template: "x" })) });
+for (const kind of ["distguitar", "heavy"]) test(`double-track: two ${kind} channels panned apart stay two guitars, not one in the middle`, { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
+  const ch = (id: string) => ({ id, name: id, sound: kind, polyphony: 4, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [40, 47, 52].map((key) => ({ key, name: "n", template: "x" })) });
   const chord = (pan: number) => [40, 47, 52].map((key) => ({ start: "1:01", len: 384, key, pan })); // an E5 power chord held for the bar, the same on both sides
   const { file, s } = await setup({
     format: "agentloops/1", name: "Double", clock: { bpm: 120 }, channels: [ch("l"), ch("r")],
@@ -280,7 +280,7 @@ test("double-track: two distguitar channels panned apart stay two guitars, not o
     for (let o = 44; o < 44 + 2 * rate * 4; o += 4) { const l = b.readInt16LE(o), x = b.readInt16LE(o + 2); lr += l * x; ll += l * l; rr += x * x; }
     const corr = lr / Math.sqrt(ll * rr);
     t.diagnostic(`L/R correlation ${corr.toFixed(3)}`);
-    assert.ok(corr < 0.9, `the two sides are one signal (correlation ${corr.toFixed(3)})`); // identical takes panned ±0.8 give exactly 1
+    assert.ok(corr < 0.9, `the two sides are one signal (correlation ${corr.toFixed(3)})`); // identical takes panned ±0.8 give exactly 1; a sampled sound gets detuned, delayed takes
   } finally { await m.client.close(); await s.close(); }
 });
 

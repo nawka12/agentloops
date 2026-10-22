@@ -8,14 +8,15 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass", "reese", "acid", "wobble", "808"], guitar: ["eguitar", "distguitar", "guitar"], pad: ["supersaw", "pad", "choir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "harp"], keys: ["piano", "epiano", "organ"], bass: ["sub", "upright", "ebass", "reese", "acid", "wobble", "808"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], pad: ["supersaw", "pad", "choir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
 const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
 // Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft; `soft: false` = mf only). The recording carries its own decay, so the envelope only
 // holds it and releases at the note's end. A held sound has a `loop` [start, end] (s, the same for all its files; keep in sync with scripts/samples.mjs): each file ends at the
 // loop's end with a crossfade baked in, so it loops for as long as the note. `swell`: the attack at vel 0, shrinking as vel rises (strings swell in when played soft).
-const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?: number; loop?: [number, number]; soft?: false; swell?: number }> = {
+// `takes`: a panned note is one side of a double-track (see string()): detuned 4 cents by side and 0-8 ms late, since one recording per note would sum to mono.
+const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?: number; loop?: [number, number]; soft?: false; swell?: number; takes?: true }> = {
   piano: { roots: span(21, 105), rel: 0.3, peak: 0.4 },
   sax: { roots: span(49, 79), rel: 0.12, peak: 0.45, wet: 0.25, loop: [1, 2.2] },
   upright: { roots: span(28, 67), rel: 0.08, peak: 0.65 }, // plucked: it decays on its own
@@ -27,6 +28,10 @@ const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?
   harp: { roots: [28, 35, 38, 41, 45, 48, 52, 55, 59, 62, 65, 69, 72, 76, 79, 83, 86, 89, 93, 95, 98, 101], rel: 0.6, peak: 0.45, wet: 0.3, soft: false },
   glock: { roots: [79, 84, 91, 96, 103, 108], rel: 0.8, peak: 0.8, wet: 0.3, soft: false },
   timpani: { roots: [41, 47, 49, 52, 55], rel: 0.5, peak: 1.2, wet: 0.2 }, // five drums, each repitched around its tuning
+  heavy: { roots: span(40, 88), rel: 0.08, peak: 0.26, soft: false, takes: true }, // recorded distortion guitar, Musyng Kite (CC BY-SA 3.0)
+  crunch: { roots: span(40, 88), rel: 0.08, peak: 0.39, soft: false, takes: true }, // recorded overdriven guitar, Musyng Kite (CC BY-SA 3.0)
+  chug: { roots: span(40, 88), rel: 0.05, peak: 1.05, soft: false, takes: true }, // recorded palm-muted electric guitar, Musyng Kite (CC BY-SA 3.0)
+  clean: { roots: span(40, 88), rel: 0.15, peak: 0.58, soft: false, takes: true }, // recorded clean electric guitar, Musyng Kite (CC BY-SA 3.0)
 };
 const KITS = ["drums", "brushes", "rock"], CYMBAL: Record<number, string> = { 49: "cymbals/49", 57: "cymbals/49", 52: "cymbals/52", 55: "cymbals/55", 51: "ride/51", 59: "ride/51", 53: "ride/53" }; // every kit shares the sampled cymbals: crash (49, 57), china (52), splash (55), ride bow (51, 59) and bell (53), each mf and soft (-p)
 const RATE = 44100; // the sample files' rate: the live context and the export both run at it, so one decode of each file serves both (an AudioBuffer works in any context)
@@ -320,14 +325,16 @@ export function preload(p: any) {
   want = fs; if (ac) loadSamples(ac, want);
 }
 /** one sampled note: the nearest recorded root, repitched; null if its buffer isn't loaded (yet) */
-function sampled(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number) {
+function sampled(r: Rig, kind: string, key: number, t: number, lvl: number, vel: number, p = 0) {
   const s = SAMPLED[kind], [k, root] = nearest(s, key), b = fetchSample(r.c, fileOf(kind, key, vel)!).b;
   if (!b) return null;
   const src = r.c.createBufferSource(), g = gain(r, 0.0001);
   const v = Math.max(0.0002, s.peak * lvl * (0.5 + vel)), a = Math.max(0.005, (s.swell ?? 0) * (1 - vel)); // vel 0.5 is unity
-  src.buffer = b; src.playbackRate.value = 2 ** ((k - root) / 12); if (s.loop) { src.loop = true; [src.loopStart, src.loopEnd] = s.loop; }
+  src.buffer = b; src.playbackRate.value = 2 ** ((k - root + (s.takes ? Math.sign(p) * 0.04 : 0)) / 12); if (s.loop) { src.loop = true; [src.loopStart, src.loopEnd] = s.loop; }
   g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a);
-  src.connect(g); g.connect(r.out); if (s.wet) send(r, g, s.wet);
+  src.connect(g); if (s.wet) send(r, g, s.wet);
+  // ponytail: the same recording, detuned and delayed; real second takes if it still sounds narrow
+  if (s.takes && p) { const d = r.c.createDelay(0.02); d.delayTime.value = Math.random() * 0.008; g.connect(d); d.connect(r.out); } else g.connect(r.out);
   src.start(t);
   return { g, oscs: [src] as AudioScheduledSourceNode[], rel: s.rel, hold: [t + a, v] as [number, number] };
 }
@@ -351,7 +358,7 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0
   if (p) { const o = pan(r, p), q = pan(r, p); o.connect(r.out); q.connect(r.pump); r = { ...r, out: o, pump: q }; } // a panned note plays into its own panners (the reverb send stays centred; `duck` stays the real pump)
   if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind);
   if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : kind === "marimba" ? marimba : bell)(r, hz(key), t, lvl); return null; }
-  if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel);
+  if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel, p);
   return sustain(r, kind, key, t, lvl, vel, p, dur, bpm);
 }
 
