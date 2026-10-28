@@ -167,20 +167,20 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 - **Length:** a note rings for its `len` at `clock.bpm`, or longer while its agent is still running. 24 ticks is a 16th step, 96 a beat, and 384 a bar.
 - **Chords:** stack notes at the same `start`. Raise the channel's `polyphony` (default 4) to at least the chord size.
 - **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). A note's `pan` (-1 left … 1 right, default 0) places it in the stereo field; the reverb stays centred. The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
-  - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato); `epiano` (an FM Rhodes: a bright bite on the attack, tremolo, and a slow fade over a few seconds while held); `organ` (Hammond drawbars with a key click and a rotating-speaker wobble; it sustains at full level).
+  - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato); `epiano` (an FM Rhodes: a bright bite on the attack, tremolo, and a slow fade over a few seconds while held); `synorgan` (a synth of Hammond drawbars with a key click and a rotating-speaker wobble; it sustains at full level; the recorded `organ` sounds more like one).
     - `eguitar` (a clean electric guitar, keys 36–88): a plucked string with a light chorus. `vel` does nothing; a long note rings for its length and the top octave fades sooner.
     - `distguitar` (a distorted guitar, keys 36–88): the same string through an amp and cabinet, which keeps long notes ringing for their length. `vel` below 0.4 is a palm mute: a short, dark chug. Each channel has one amp, so a chord distorts as one sound, and the channel's `gain` is its volume after the distortion. Stack a power chord rather than a full triad.
     - `ebass` (a picked electric bass, keys 23–60): a bright pick that closes to a round tone in 150 ms; `vel` brightens the pick. A long note holds for its length. Not pumped by the kick.
     - `guitar` (a steel-string acoustic, keys 40–88): a bright plucked string with a wooden body and a touch of reverb. `vel` brightens it a little. A long note rings for its length and the top octave fades sooner. Strum by offsetting a chord's notes.
     - `pad` (a warm pad, keys 36–84): three detuned saws that fade in over 0.6 s while the filter opens over a couple of seconds, with a long release and lots of reverb. `vel` does nothing. Darker than `supersaw` and not pumped; a long note keeps sounding for its length.
     - `noise` (a riser, any key): filtered noise centred on the key. Over the note's length it swells in from silence while the band rises an octave, then cuts off at the note's end, so one long note is a reverse-cymbal swell into the next section. `vel` does nothing.
-    - `choir` (an "ah" choir, keys 36–84): a saw through three vowel filters with vibrato that fades in; slow attack, long release, lots of reverb. `vel` does nothing. A long note keeps sounding for its length. Not pumped.
+    - `synchoir` (a synth "ah" choir, keys 36–84; the recorded `choir` sounds more like voices): a saw through three vowel filters with vibrato that fades in; slow attack, long release, lots of reverb. `vel` does nothing. A long note keeps sounding for its length. Not pumped.
     - `reese` (a drum-and-bass bass, keys 24–55): two detuned saws through a slowly drifting lowpass, pumped by the kick. `vel` does nothing; a long note holds and keeps drifting.
     - `acid` (a 303 bass, keys 24–60): a saw through a resonant lowpass that drops from bright to dark on every note, so repeated 16ths squelch. `vel` does nothing. A long note holds at the dark end. Not pumped.
     - `wobble` (a dubstep bass, keys 24–55): a saw whose lowpass is swept by an LFO in 8th notes at the song's tempo (it follows the tempo knob), pumped by the kick. `vel` does nothing. A long note wobbles for its length.
     - `808` (a sub bass, keys 24–60): a sine that drops an octave in 30 ms (the punch), lightly saturated. `vel` does nothing. A long note rings for its length. Not pumped.
     - `brass` (a synth brass lead, keys 48–84): a saw whose filter opens in 80 ms (the blare). `vel` does nothing. A long note holds.
-    - `flute` (keys 60–96): a sine with a little breath noise and vibrato that arrives after about 0.3 s. `vel` does nothing. A long note holds and its vibrato keeps going.
+    - `whistle` (keys 60–96; it was the synth `flute`): a sine with a little breath noise and vibrato that arrives after about 0.3 s. `vel` does nothing. A long note holds and its vibrato keeps going.
     - `chop` (a vocal chop, keys 55–96): a buzzy voice that sings the note's `text`, read letter by letter: the vowels a i u e o; y and w glide in from i and u; n and m hum. Other letters are skipped, and a text with no vowel sings "a". The letters come 60 ms apart ("nya" is n → y → a, then holds the a). It starts and stops fast, so the note's length is the chop: 16ths stutter. `vel` does nothing. Not pumped.
     - `growl` (a kawaii growl bass, keys 24–55): two driven saws through a vowel filter that moves across the whole note from letter to letter of its `text` (same letters as `chop`; default "wow", u → o → u; "yoi" is i → o → i, "wah" u → a), over a clean sine for weight. Pumped by the kick. `vel` does nothing. Repeated 8ths with text "yoi" give the "yoi-yoi".
   - **One-shot:** `pluck` (filter snap), `bell` (FM, long ring) and `marimba` (a wooden knock over a short tone, keys 48–96; `vel` does nothing, and a long note does not ring longer).
@@ -197,7 +197,12 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `heavy` (a recorded distorted guitar, keys 40–88) rings out for about 3 s, then fades at the recording's end, even in a longer note. One dynamic, so `vel` only sets loudness.
     - `crunch` (a recorded overdriven guitar, keys 40–88): the same, with less drive than `heavy`.
     - `chug` (a recorded palm-muted electric guitar, keys 40–88): short, dark notes; one dynamic, `vel` only sets loudness.
-    - `clean` (a recorded clean electric guitar, keys 40–88): rings out for about 3 s, then fades at the recording's end; `vel` only sets loudness.
+    - `clean` (a recorded clean electric guitar, keys 40–88): rings out for about 3 s, then fades at the recording's end. A note shorter than a quarter second is choked: it decays from the pick, like a funk stab, instead of holding flat. `vel` below 0.4 is a dead note (the "chicken scratch"): the muted string, gone within about 50 ms. Otherwise `vel` sets loudness.
+    - `finger` (a recorded fingerstyle electric bass, keys 28–67) and `slap` (slapped, keys 28–67; its octave notes pop) ring for about 3 s and fade at the note's end. `vel` below 0.4 is a dead note (a ghost note); otherwise it sets loudness.
+    - `organ` (a recorded drawbar organ, keys 36–96) loops and holds through a rotating speaker. `vel` 0.7 and up adds the percussion click (a decaying high partial) on the attack; below that it only sets loudness.
+    - `flute` (a concert flute with vibrato, keys 60–96) loops and holds; one dynamic, so `vel` only sets loudness.
+    - `choir` (an "aah" choir, keys 48–84) and `ooh` (voices on "ooh", keys 48–84) loop and hold; one dynamic.
+    - `shout` (gang shouts, any key): one shout per note, the word from its `text`: `hey` (the default), `ha`, `woo` or `yeah` (punctuation is ignored). It plays whole whatever the note's length, and the key doesn't change it: the same word on two channels or at two keys just gets louder. `vel` sets loudness.
     - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
     - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
@@ -218,7 +223,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - To layer, put clips on different `track`s at the same bar.
   - SONG plays the arrangement once; PAT loops the selected pattern.
 - **Listening:** the user hears the run, so **always `run_start` with `pace: "project"`**. Unpaced, every note fires at once.
-- **Words:** `chop` sings the syllables in its notes' `text`. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
+- **Words:** `chop` sings the syllables in its notes' `text`, and `shout` shouts its word. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
 - **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated.
 
 ### Write the song before the arrangement
@@ -266,6 +271,14 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - Last chorus up a half or whole step.
   - `eguitar` or `clean` arpeggios for verses.
   - Synth `distguitar` for wide double-tracked walls and `vel` palm mutes; recorded `heavy` or `crunch` for amp character on leads and riffs, `chug` for recorded palm mutes. Mixing synth and recorded guitars works.
+- **Funk / city pop** (95–120 BPM; `finger` or `slap`, `clean`, `organ`, `piano` or `epiano`, `flute`, `strings`, `choir` or `ooh`, `shout`, `drums`):
+  - Progressions (in C): IVmaj7–III7–vi7–v7–I7 (Fmaj7 → E7 → Am7 → Gm7 → C7); ii7–V7 vamps (Dm9 → G13); I7–IV7 one-chord-per-bar funk (C9 → F9); a half step up for the last chorus.
+  - Cutting guitar on `clean`: every 16th of the bar is a strum. A few accented offbeats are open three-note chords (short, so they choke); the rest are dead notes (`vel` 0.3) on the same chord. Without the dead notes the stabs sound like a horn. Strum by offsetting a chord's notes 1–2 ticks.
+  - Bass on `finger`: syncopated 16ths on the roots with octave jumps and ghost notes (`vel` 0.3); `slap` for a slapped chorus, octaves popping on the offbeats.
+  - `organ` holds the chords under the band (`vel` 0.7 for the percussive click on comping stabs); the piano comps on the dotted-8th push.
+  - Gang shouts on `shout`: one "hey!" (or "ha!") on a beat between phrases, not over the lead.
+  - `flute` for the hook in keys 72–96; strings and `ooh` for a breakdown.
+  - Drums: four-on-the-floor or a backbeat with 16th hats, accents on the offbeats.
 - **Ballad** (60–80 BPM; `piano`, `strings`, `violin`, `pizz`, `guitar`, `pad`, `harp`, `glock`, `timpani`, `noise`):
   - Progressions (in C): the Canon I–V–vi–iii–IV–I–IV–V; a falling bass I–V/7–vi–I/5–IV (C → G/B → Am → C/G → F); vi–IV–I–V; IV–V–iii–vi; IV–iv–I (F → Fm → C) for a sad turn.
   - Verse 1 is `piano` alone: roots in the left hand, broken chords in the right.

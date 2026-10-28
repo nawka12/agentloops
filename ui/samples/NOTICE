@@ -97,4 +97,28 @@ heavy/, crunch/, chug/, clean/  distortion, overdriven, palm-muted and clean ele
         Changes made: one sample per 3 semitones (E2-E6), leading silence trimmed, cut to 3 s, faded out,
         peak-normalized, and re-encoded to mono 80 kbps MP3. These files remain under CC BY-SA 3.0.
 
+finger/, slap/, choir/  fingerstyle electric bass, slap bass and "aah" choir (the Musyng Kite soundfont's electric_bass_finger,
+        slap_bass_1 and choir_aahs), from midi-js-soundfonts (MusyngKite): https://github.com/gleitz/midi-js-soundfonts
+        Licensed under CC BY-SA 3.0: https://creativecommons.org/licenses/by-sa/3.0/
+        Changes made: one sample per 3 semitones, leading silence trimmed, cut to 3 s and faded out (the basses) or cut to
+        a loop (choir: retuned where over 10 cents off, a gain ramp and a crossfade at the loop end, nothing kept after it),
+        peak-normalized, and re-encoded to mono 80 kbps MP3. These files remain under CC BY-SA 3.0.
+
+organ/, ooh/  drawbar organ and "ooh" voices (the FluidR3 GM soundfont's drawbar_organ and voice_oohs, by Frank Wen),
+        from midi-js-soundfonts (FluidR3_GM): https://github.com/gleitz/midi-js-soundfonts
+        Licensed under CC BY 3.0: https://creativecommons.org/licenses/by/3.0/
+        Changes made: one sample per 3 semitones, retuned where over 10 cents off, cut to a loop (a gain ramp and a
+        crossfade at the loop end, nothing kept after it), peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+flute/  concert flute, sustained with vibrato (Woodwinds/Flute/susvib), from VSCO 2 Community Edition, by Versilian
+        Studios (Sam Gossner), CC0 1.0 (public domain dedication): https://github.com/sgossner/VSCO-2-CE
+        Changes made: mixed to mono, retuned to equal temperament where over 10 cents off, cut to a loop (a gain ramp
+        and a crossfade at the loop end, nothing kept after it), peak-normalized, and re-encoded to mono 80 kbps MP3.
+
+shout/  shouts from Freesound, each CC0 1.0 (public domain dedication): hey.mp3 "Big Hey" by letztergeist
+        (https://freesound.org/s/653386/), ha.mp3 "Sampli_Ha.wav" by BrivaMagda (https://freesound.org/s/671353/),
+        woo.mp3 "US Military Soldier Shouting Whoo!" by qubodup (https://freesound.org/s/161340/), yeah.mp3
+        "Shouting Yeah.wav" by tonsil5 (https://freesound.org/s/416843/).
+        Changes made: one shout cut from each (Freesound's preview MP3), faded, loudness-matched, and re-encoded to mono 80 kbps MP3.
+
 The MP3s are rebuilt from the original recordings by scripts/samples.mjs.

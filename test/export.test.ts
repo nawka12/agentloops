@@ -223,7 +223,7 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
 });
 
 test("looped sounds hold an 8 s note: still sounding long after their files end", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
-  const sounds = ["sax", "trumpet", "trombone", "strings", "violin"], BAR = 2, BARS = 5; // 120 BPM; each sound plays one 4-bar note (8 s) in its own 5-bar slot. Files end at the loop's end, 1.4-6.5 s in
+  const sounds = ["sax", "trumpet", "trombone", "strings", "violin", "organ", "flute", "choir", "ooh"], BAR = 2, BARS = 5; // 120 BPM; each sound plays one 4-bar note (8 s) in its own 5-bar slot. Files end at the loop's end, 1.4-6.5 s in
   const { file, s } = await setup({
     format: "agentloops/1", name: "Loops", clock: { bpm: 120 },
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 64, name: "n", template: "x" }] })),
@@ -261,6 +261,31 @@ test("chop: the note's text picks the vowel ('i' has its 2nd formant near 2.8 kH
     const f = 440 * 2 ** (-9 / 12), tilt = (bar: number) => 10 * Math.log10(power(bar, 11 * f) / power(bar, 5 * f)); // harmonic 11 (2.88 kHz) over harmonic 5 (1.31 kHz)
     t.diagnostic(`11th over 5th harmonic: "a" ${tilt(0).toFixed(1)} dB, "i" ${tilt(1).toFixed(1)} dB`);
     assert.ok(tilt(1) - tilt(0) > 12, "the vowel did not follow the text");
+  } finally { await m.client.close(); await s.close(); }
+});
+
+test("articulations: dead notes, the clean choke, shout words", { skip: chromium ? false : "chromium is not installed", timeout: 120_000 }, async (t) => {
+  // 120 BPM, 2 s bars. Bar 1/2: clean, a long note then a dead one (vel 0.3); bar 3/4: finger the same; bar 5/6: clean, a 16th (choked) then a long note;
+  // bar 7/8: shout "hey" then "Ha!" (the files last 1.0 and 0.37 s)
+  const ch = (id: string, sound: string) => ({ id, name: id, sound, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 64, name: "n", template: "x" }] });
+  const { file, s } = await setup({
+    format: "agentloops/1", name: "Articulations", clock: { bpm: 120 }, channels: [ch("g", "clean"), ch("b", "finger"), ch("h", "shout")],
+    patterns: [{ id: "p", lengthSteps: 128, notes: {
+      g: [{ start: "1:01", len: 192, key: 64 }, { start: "2:01", len: 192, key: 64, vel: 0.3 }, { start: "5:01", len: 24, key: 64 }, { start: "6:01", len: 192, key: 64 }],
+      b: [{ start: "3:01", len: 192, key: 64 }, { start: "4:01", len: 192, key: 64, vel: 0.3 }],
+      h: [{ start: "7:01", len: 24, key: 64, text: "hey" }, { start: "8:01", len: 24, key: 64, text: "Ha!" }] } }],
+    arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],
+  });
+  const m = await mcp(file);
+  try {
+    const r = await m.call("audio_export", { file: "art.wav" }), b = readFileSync(r.file), rate = b.readUInt32LE(24);
+    const db = (bar: number, from: number, to: number) => { let sum = 0, n = 0; for (let i = Math.floor((bar * 2 + from) * rate); i < (bar * 2 + to) * rate; i++, n++) { const v = b.readInt16LE(44 + i * 4) / 32768; sum += v * v; } return 10 * Math.log10(sum / n + 1e-12); };
+    const dead = (bar: number) => db(bar, 0.1, 0.4) - db(bar - 1, 0.1, 0.4), choke = db(4, 0.06, 0.12) - db(5, 0.06, 0.12), word = db(7, 0.5, 0.9) - db(6, 0.5, 0.9);
+    t.diagnostic(`dead vs open 0.1-0.4 s: clean ${dead(1).toFixed(1)} dB, finger ${dead(3).toFixed(1)} dB; choked 16th vs long note at 60-120 ms ${choke.toFixed(1)} dB; "ha" vs "hey" at 0.5-0.9 s ${word.toFixed(1)} dB`);
+    assert.ok(dead(1) < -20 && dead(3) < -20, "a vel 0.3 note on clean/finger is not a dead note");
+    assert.ok(db(1, 0, 0.05) > db(0, 0, 0.05) - 12, "the dead note is silent");
+    assert.ok(choke < -3, "a short clean note does not choke");
+    assert.ok(word < -20, "the shout's text did not pick the word");
   } finally { await m.client.close(); await s.close(); }
 });
 

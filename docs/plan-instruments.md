@@ -1,6 +1,6 @@
 # Plan: more instruments
 
-Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slices C and D merged 2026-10-20 (all questions under [Decide before slice C](#decide-before-slice-c-2026-10-20) are answered). Slice E merged 2026-10-22.
+Status: planned 2026-10-18. Slices A and B merged 2026-10-19. J-rock and ballad slices (C, D) planned 2026-10-20; the earlier synth list moved to E. Slices C and D merged 2026-10-20 (all questions under [Decide before slice C](#decide-before-slice-c-2026-10-20) are answered). Slice E merged 2026-10-22. Slice G merged 2026-10-22. Slice H (funk band) merged 2026-10-28; the mixing requests from the same feedback are slice I, in docs/plan-mix.md.
 
 **Priorities:** a grand piano for mellow songs, and saxophone plus other jazz instruments. A synth can't make a convincing piano or sax, so these two are **sampled**. That's new infrastructure: today every sound in `ui/sound.ts` is synthesized with plain Web Audio. Everything else in this plan stays synthesized.
 
@@ -241,6 +241,46 @@ From a song agent's feedback on AGENTS.md: its "Making music" section steered so
 - Not built: a per-note pitch `glide` (needs automation; the manual lists it under "Not supported yet")
 
 As built: `text` now travels with the voice event and the export score, as a trailing argument of `make`, `sustain` and `note`. `chop` and `growl` share `formants()`: three bandpasses (F1, F2, F3 of a female voice) plus a level per letter, ramped from letter to letter; F1 stays above 1.1× the pitch so high chops keep their fundamental. `chop` moves a letter every 60 ms, `growl` spreads its letters over 85% of the note. Levels from the export test: `pizz` -1.2, `chop` -0.4, `growl` +2.4 dB against `triangle`. A test checks that "i" and "a" chops differ by more than 12 dB in harmonic 11 over harmonic 5 (measured 26.7). The VSCO C7 pizz reads as C6 in the octave check, so A6 is the top root.
+
+### H: funk band (song-agent feedback, 2026-10-28)
+
+From ~/agl-song/perisai-jitu/agentloops-feedback.md: an agent recomposed a funk / city-pop instrumental (Perisai Jitu, 102 BPM) and
+tagged each part alone with YAMNet against the original's demucs stem. The sampled sounds passed; the synthesized bass, guitar, organ,
+flute and voices did not. Its mixing requests (stems, a limiter, per-channel mix, sidechain) are slice I.
+
+Decisions (2026-10-28): the recorded organ and flute take the plain names `organ` and `flute`; the synths stay as `synorgan` and `whistle`
+(songs that used `organ`/`flute` now play the recordings). The same reasoning moved `choir` to the recorded "aah" choir, with the synth as
+`synchoir`. The basses are new names (`ebass` stays the synth, as the guitars did).
+
+- [x] `finger`: recorded fingerstyle electric bass (Musyng Kite, CC BY-SA 3.0), E1-G4
+- [x] `slap`: recorded slap bass (Musyng Kite `slap_bass_1`). No separate pop articulation: the octave notes pop
+- [x] Dead notes: `vel` below 0.4 on `clean` plays the palm-muted `chug` file at the same root, choked within ~50 ms (the chicken scratch); on `finger` and `slap` the same recording, choked (ghost notes)
+- [x] Choke: a `clean` note shorter than 0.25 s decays from the pick (time constant 0.1 s) instead of holding flat
+- [x] `organ`: recorded drawbar organ (FluidR3 GM, CC BY 3.0), C2-C7, looped, through a rotating speaker (tremolo and auto-pan, 0.8 Hz); `vel` 0.7 and up adds the percussion (a decaying 3rd harmonic)
+- [x] `flute`: VSCO 2 CE concert flute, sustained with vibrato (CC0), C4-C7, looped
+- [x] `choir` ("aah", Musyng Kite) and `ooh` (FluidR3), C3-C6, looped, in a new `voice` family
+- [x] `shout`: gang shouts from Freesound (CC0), the word from the note's `text`: hey, ha, woo, yeah. A gang "hey"; the others are single voices that the engine layers three times (±25 cents, 0-25 ms, panned apart)
+- [x] Manual: a line per sound, the renames, and a funk / city-pop genre menu (cutting guitar with dead notes, ghost notes, organ percussion, shouts)
+- [x] Tests: the level test covers the new sounds; the loop test holds `organ`, `flute`, `choir`, `ooh` for 8 s; a new test checks dead notes, the choke and the shout words
+- [x] You listen in the studio (approved 2026-10-28). The shouts don't match this song: its "shouts" are the original singer's own "ha ha ha", one voice, where the recomposition wrote gang shouts and `shout` always layers into a gang. "Not that bad"; a single-voice option is a possible follow-up
+
+As built: sources were picked by rendering the song's own parts with each candidate and tagging them with YAMNet (the song agent's
+model and classes). Musyng Kite's `voice_oohs` beats in a deep 1 Hz tremolo (dips of 15-19 dB) and can't loop, so `ooh` is FluidR3's.
+The drawbar organ's strongest partial is the 16' (an octave below the note), so the sample script measures its pitch on the note's own
+partial (`sub: true`). VSCO's flute folder names notes an octave low, like its string sections (the octave check confirms it); its C7 note
+lasts 4 s, so the loop is 1.5-3.6 s. Levels from the export test against `triangle` (under the old master compressor, which squeezes level changes): `finger` +4.4, `slap` +1.7, `organ` +0.9,
+`flute` +2.3, `choir` +2.1, `ooh` +3.2, `shout` -0.2 dB. New samples total 2.6 MB; `ui/samples` is 19 MB.
+
+Plain clean stabs read as a car horn because the soundfont render holds flat for about 240 ms: a short chord of them is a steady bright
+tone switched on and off. Strumming the chord didn't change that (horn 0.6 with 8 or 15 ms strums); a decay helped some; what removes
+it is the dead notes between the stabs, which is how funk guitar is played anyway.
+
+The song's solos, re-tagged with YAMNet after this slice (own-class score; original stem in brackets): bass 0.00 → 0.06 [0.42] (now
+"bass guitar, plucked string, guitar"), funk guitar: car horn 0.64 → none, guitar 0.00 [0.08], organ 0.00 → 0.27 [0.19], flute
+0.07 → 0.77 [0.38], shouts 0.00 → 0.04 [0.04] ("speech, whoop, shout"), "ooh" 0.04 → 0.02 [0.04] (no longer a siren). The bass and
+guitar still fall short of the original; the master compressor (slice I replaces it) also flattens their attacks.
+
+Not built: a separate pop articulation for `slap`, a "ho" shout (no clean CC0 one found), an engine strum (offset a chord's notes 1-2 ticks).
 
 ### F (optional): demo songs
 

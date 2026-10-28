@@ -1,5 +1,6 @@
 // Rebuilds the note samples in ui/samples/: Salamander Grand Piano V3 (CC BY 3.0, Alexander Holm), University of Iowa Musical
-// Instrument Samples, VSCO 2 Community Edition (CC0), and the Musyng Kite guitars (CC BY-SA 3.0). The MP3s are committed; this script only exists so they can be rebuilt.
+// Instrument Samples, VSCO 2 Community Edition (CC0), the Musyng Kite guitars, basses and voices (CC BY-SA 3.0), the FluidR3 organ (CC BY 3.0) and
+// Freesound shouts (CC0). The MP3s are committed; this script only exists so they can be rebuilt.
 // Needs ffmpeg, curl, tar.
 // Usage: node scripts/samples.mjs [cacheDir [sound...]] (no sounds = all; the others' MP3s are left alone).
 // Downloads land in cacheDir and are only read by ffmpeg/tar, never run.
@@ -21,7 +22,8 @@ const PIANO_URL = "https://freepats.zenvoid.org/Piano/SalamanderGrandPiano/Salam
 const PIANO_DIR = "SalamanderGrandPianoV3_44.1khz16bit/44.1khz16bit/";
 const IOWA = "https://theremin.music.uiowa.edu/sound%20files/MIS/";
 const VSCO = (path) => `https://raw.githubusercontent.com/sgossner/VSCO-2-CE/master/${path.split("/").map(encodeURIComponent).join("/")}`;
-const MK = (inst) => (m) => `https://gleitz.github.io/midi-js-soundfonts/MusyngKite/${inst}-mp3/${["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"][m % 12]}${Math.floor(m / 12) - 1}.mp3`;
+const GM = (font) => (inst) => (m) => `https://gleitz.github.io/midi-js-soundfonts/${font}/${inst}-mp3/${["C", "Db", "D", "Eb", "E", "F", "Gb", "G", "Ab", "A", "Bb", "B"][m % 12]}${Math.floor(m / 12) - 1}.mp3`;
+const MK = GM("MusyngKite"), FLUID = GM("FluidR3_GM");
 const low = (m) => pianoName(m - 12); // the VSCO section and glock folders name every note an octave below how it sounds (measured; see oct)
 const hzOf = (m) => 440 * 2 ** ((m - 69) / 12);
 const TAIL = (sec) => `atrim=duration=${sec},afade=t=out:st=${sec * 0.75}:d=${sec * 0.25}`;
@@ -32,7 +34,7 @@ const PIANO_CHAIN = "silenceremove=start_periods=1:start_threshold=-50dB:start_s
 // A struck note rings down into the tape noise, so those sets split at a much lower level (sil). fix["layer.range"] = [sil, shortest
 // note, midi notes the file lacks] for a file with noise blips that would pass for notes, or a note that was never recorded.
 // held = a held note, looped (see held()), retuned to equal temperament; decay = struck, cut at sec with a fade (attack check).
-// tune = cents off at which a note is retuned; pitch false = unpitched. loop: [ls, le] s, the loop window of every file of a held sound.
+// tune = cents off at which a note is retuned; pitch false = unpitched; sub: measured by tone() (see organ). loop: [ls, le] s, the loop window of every file of a held sound.
 // VSCO sets have one file per note: src(midi, layer) is its path (a full URL for any other host: the Musyng Kite guitars). layers: which of mf ("<root>.mp3") and pp ("<root>-p.mp3") exist.
 // flat: no attack check. oct: also check the octave (see f0), "harm" for harmonic sounds, "peak" for the glock and timpani.
 const SETS = {
@@ -87,6 +89,23 @@ const SETS = {
   crunch: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("overdriven_guitar") },
   chug: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("electric_guitar_muted") },
   clean: { kind: "decay", sec: 3, to: -9, flat: true, layers: ["mf"], roots: roots(40, 88), src: MK("electric_guitar_clean") },
+  // Recorded electric basses, the same kind of render, E1-G4.
+  finger: { kind: "decay", sec: 3, flat: true, layers: ["mf"], roots: roots(28, 67), src: MK("electric_bass_finger") },
+  slap: { kind: "decay", sec: 3, flat: true, layers: ["mf"], roots: roots(28, 67), src: MK("slap_bass_1") },
+  // Held soundfont renders, looped: a drawbar organ (FluidR3: it reads more as an organ than Musyng Kite's, measured with YAMNet) and the GM choir "aah" and voice "ooh".
+  // sub: the 16' drawbar (an octave below the note) is its strongest partial, so the period is twice the note's: pitch is measured on the note's own partial (tone).
+  organ: { kind: "held", loop: [1, 2.5], tune: 10, sub: true, layers: ["mf"], roots: roots(36, 96), src: FLUID("drawbar_organ") },
+  choir: { kind: "held", loop: [1, 2.5], tune: 10, layers: ["mf"], roots: roots(48, 84), src: MK("choir_aahs") },
+  ooh: { kind: "held", loop: [1, 2], tune: 10, layers: ["mf"], roots: roots(48, 84), src: FLUID("voice_oohs") }, // Musyng Kite's oohs beat in a deep 1 Hz tremolo (dips of 15-19 dB): no steady loop
+  // Concert flute, sustained with vibrato (one dynamic). The folder names each note an octave low, like the string sections.
+  flute: { kind: "held", loop: [1.5, 3.6], tune: 10, oct: "harm", layers: ["mf"], roots: [60, 64, 69, 72, 76, 81, 84, 88, 93, 96],
+    src: (m) => `Woodwinds/Flute/susvib/LDFlute_susvib_${low(m)}_v1_1.wav` },
+  // Shouts, one file per word ([preview URL, cut from, to] s): a gang "hey", single voices for the rest (the engine layers them into a gang). Loudness-matched.
+  shout: { kind: "word", pitch: false, words: {
+    hey: ["https://cdn.freesound.org/previews/653/653386_2807194-hq.mp3", 0.35, 1.35], // "Big Hey" by letztergeist
+    ha: ["https://cdn.freesound.org/previews/671/671353_14659426-hq.mp3", 3.18, 3.55], // "Sampli_Ha" by BrivaMagda, its second "ha"
+    woo: ["https://cdn.freesound.org/previews/161/161340_71257-hq.mp3", 0, 0.65], // "US Military Soldier Shouting 'Whoo!'" by qubodup
+    yeah: ["https://cdn.freesound.org/previews/416/416843_8247784-hq.mp3", 0.07, 0.6] } }, // "Shouting Yeah" by tonsil5
 };
 
 const sh = (cmd, args, input) => {
@@ -174,7 +193,7 @@ const onset = (x, rate) => { let p = 0; for (const v of x) p = Math.max(p, Math.
 const XF = 0.25, LOOPDB = 6, GAPDB = 12, DRIFT = 3;
 function held(sound, m, suffix, src, cut, S) {
   const [ls, le] = S.loop, want = hzOf(m), x4 = decode(src, cut);
-  const r = want / pitch(x4.subarray(onset(x4, RATE) + Math.round((ls - 0.15) * RATE)), want);
+  const r = want / (S.sub ? tone : pitch)(x4.subarray(onset(x4, RATE) + Math.round((ls - 0.15) * RATE)), want);
   const x = decode(src, cut, SR, Math.abs(1200 * Math.log2(r)) > S.tune ? `asetrate=${(SR * r).toFixed(1)},aresample=${SR}` : undefined);
   const on = onset(x, SR), E = Math.round(le * SR), L = Math.round((le - ls) * SR), F = Math.round(XF * SR), y = x.slice(on, on + E);
   if (y.length < E) throw new Error(`${src} (midi ${m}): ${(y.length / SR).toFixed(2)} s from its onset, the loop ends at ${le} s`);
@@ -201,6 +220,7 @@ if (wanted("piano")) {
 for (const [sound, S] of Object.entries(SETS)) {
   if (!wanted(sound)) continue;
   fresh(sound);
+  for (const [w, [url, a, b]] of Object.entries(S.words ?? {})) emit(sound, w, "", fetchTo(url, `${sound}-${w}.mp3`), ["-ss", String(a), "-to", String(b)], `afade=t=in:d=0.005,afade=t=out:st=${(b - a - 0.05).toFixed(2)}:d=0.05`, b - a, -22);
   for (const [layer, suffix] of [["mf", ""], ["pp", "-p"]].filter(([l]) => (S.layers ?? ["mf", "pp"]).includes(l))) {
     const note = (m, file, cut) => S.kind === "held" ? held(sound, m, suffix, file, cut, S) : emit(sound, m, suffix, file, cut, S.src ? TAIL(S.sec) : DECAY(S.sec, S.start), S.sec, S.loud, S.to);
     for (const m of S.src ? S.roots : []) {
@@ -339,7 +359,7 @@ for (const { sound, m, file, maxSec } of made) {
   if (SETS[sound]?.pitch === false) continue;
   const want = hzOf(m), y = x.subarray(Math.round(((SETS[sound]?.loop?.[0] ?? 0.15) - 0.15) * RATE)); // held notes are measured in the loop
   if (SETS[sound]?.oct) { const k = f0(y, want, SETS[sound].oct); if (!(Math.abs(k - m) < 0.5)) throw new Error(`${file}: sounds at midi ${k?.toFixed(2)}, not ${m}`); }
-  let c = 1200 * Math.log2(measure(kind)(y, want) / want);
+  let c = 1200 * Math.log2((SETS[sound]?.sub ? tone : measure(kind))(y, want) / want);
   c = ((c % 1200) + 1800) % 1200 - 600; // [-600, 600): octave errors are fine, a split off by one note is not
   if (Math.abs(c) > 50) throw new Error(`${file}: ${c.toFixed(1)} cents off midi ${m}`);
   if (Math.abs(c) > s.worst) { s.worst = Math.abs(c); s.at = m; }
