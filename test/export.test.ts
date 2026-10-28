@@ -197,8 +197,8 @@ test("export timing: a 64 s click track starts at 0 and stays on the grid", { sk
 
 test("every sound renders: not silent, level within 10 dB of triangle", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
   // ponytail: ±10 dB, not 6: `sub` sits at about +9 dB and `pluck` at -9.5 dB (its peaks hit the limiter) of triangle (a decaying note over a 2 s bar). Retune those, then tighten
-  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a crash for rock, a ride for brushes)
-  const key = (x: string) => (x === "drums" ? 36 : x === "rock" ? 49 : x === "brushes" ? 51 : 60);
+  const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums and edm, a crash for rock, a ride for brushes)
+  const key = (x: string) => (x === "drums" || x === "edm" ? 36 : x === "rock" ? 49 : x === "brushes" ? 51 : 60);
   const { file, s } = await setup({
     format: "agentloops/1", name: "Sounds", clock: { bpm: 120 }, mix: { master: "compressor" }, // the old master compressor, which the levels and the ±10 dB were set through: it evens them out by ~5 dB (through the limiter sub sits at +15, trombone at +11)
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: key(x), name: "n", template: "x" }] })),
@@ -223,7 +223,7 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
 });
 
 test("looped sounds hold an 8 s note: still sounding long after their files end", { skip: chromium ? false : "chromium is not installed", timeout: 180_000 }, async (t) => {
-  const sounds = ["sax", "trumpet", "trombone", "strings", "violin", "organ", "flute", "choir", "ooh"], BAR = 2, BARS = 5; // 120 BPM; each sound plays one 4-bar note (8 s) in its own 5-bar slot. Files end at the loop's end, 1.4-6.5 s in
+  const sounds = ["sax", "trumpet", "trombone", "strings", "violin", "organ", "flute", "choir", "ooh", "accordion"], BAR = 2, BARS = 5; // 120 BPM; each sound plays one 4-bar note (8 s) in its own 5-bar slot. Files end at the loop's end, 1.4-6.5 s in
   const { file, s } = await setup({
     format: "agentloops/1", name: "Loops", clock: { bpm: 120 },
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: 64, name: "n", template: "x" }] })),

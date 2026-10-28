@@ -8,9 +8,9 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute", "whistle", "chop"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "pizz", "harp"], keys: ["piano", "epiano", "organ", "synorgan"], bass: ["sub", "upright", "finger", "slap", "ebass", "reese", "acid", "wobble", "808", "growl"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], voice: ["choir", "ooh", "shout"], pad: ["supersaw", "pad", "synchoir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock"], fx: ["noise"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute", "whistle", "chop"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "pizz", "harp"], keys: ["piano", "epiano", "organ", "synorgan", "accordion"], bass: ["sub", "upright", "finger", "slap", "ebass", "reese", "acid", "wobble", "808", "growl"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], voice: ["choir", "ooh", "shout"], pad: ["supersaw", "pad", "synchoir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock", "edm"], fx: ["noise"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
-const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock", "shout"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
+const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock", "edm", "shout"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
 // Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft; `soft: false` = mf only). The recording carries its own decay, so the envelope only
 // holds it and releases at the note's end. A held sound has a `loop` [start, end] (s, the same for all its files; keep in sync with scripts/samples.mjs): each file ends at the
@@ -42,9 +42,10 @@ const SAMPLED: Record<string, { roots: number[]; rel: number; peak: number; wet?
   flute: { roots: [60, 64, 69, 72, 76, 81, 84, 88, 93, 96], rel: 0.15, peak: 0.5, wet: 0.25, loop: [1.5, 3.6], soft: false }, // concert flute with vibrato, VSCO 2 CE (CC0)
   choir: { roots: span(48, 84), rel: 0.5, peak: 0.45, wet: 0.4, loop: [1, 2.5], soft: false }, // "aah" choir, Musyng Kite (CC BY-SA 3.0)
   ooh: { roots: span(48, 84), rel: 0.5, peak: 0.35, wet: 0.4, loop: [1, 2], soft: false }, // "ooh" voices, FluidR3 (CC BY 3.0)
+  accordion: { roots: span(48, 90), rel: 0.08, peak: 0.35, wet: 0.2, loop: [1, 2.5], soft: false }, // a bandoneon-like tango accordion, FluidR3 (CC BY 3.0)
 };
 const WORDS = ["hey", "ha", "woo", "yeah"]; // the shouts, files shout/<word> (Freesound, CC0)
-const KITS = ["drums", "brushes", "rock"], CYMBAL: Record<number, string> = { 49: "cymbals/49", 57: "cymbals/49", 52: "cymbals/52", 55: "cymbals/55", 51: "ride/51", 59: "ride/51", 53: "ride/53" }; // every kit shares the sampled cymbals: crash (49, 57), china (52), splash (55), ride bow (51, 59) and bell (53), each mf and soft (-p)
+const KITS = ["drums", "brushes", "rock", "edm"], CYMBAL: Record<number, string> = { 49: "cymbals/49", 57: "cymbals/49", 52: "cymbals/52", 55: "cymbals/55", 51: "ride/51", 59: "ride/51", 53: "ride/53" }; // every kit shares the sampled cymbals: crash (49, 57), china (52), splash (55), ride bow (51, 59) and bell (53), each mf and soft (-p)
 const RATE = 44100; // the sample files' rate: the live context and the export both run at it, so one decode of each file serves both (an AudioBuffer works in any context)
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
@@ -555,14 +556,22 @@ function shout(r: Rig, f: string, t: number, lvl: number, vel: number) {
 const TOMS: Record<number, number> = { 41: 82, 43: 102, 45: 125, 47: 152, 48: 185, 50: 225 }; // low floor tom up to high tom, Hz
 /** General MIDI-ish kit: 35/36 kick, 37 side stick, 38/40 snare, 39 clap, 41-50 toms, 42/44 closed hat, 46 open hat, 49/57 crash, 52 china, 51/59 ride bow, 53 ride bell, 55 splash,
  *  54 tambourine, 56 cowbell, 70 maracas, 75 claves; anything else is a rim click. `brushes` is a soft round kick, 38 a slap, and 40 a swirl that swells
- *  in and lasts until released (the returned voice); `rock` is a lower, punchier kick that doesn't duck the pump, and a snare with body and a long bright tail; the rest is shared.
- *  A closed hat (42/44) chokes the open hat (46) before it. */
+ *  in and lasts until released (the returned voice); `rock` is a lower, punchier kick that doesn't duck the pump, and a snare with body and a long bright tail; `edm` is a deep kick
+ *  and hats that reach down to 2.5 kHz; the rest is shared. A closed hat (42/44) chokes the open hat (46) before it. */
 const openHat = new WeakMap<BaseAudioContext, GainNode>(); // the last open hat's gain per context (a note's rig is a copy, so not on the rig)
 function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "drums", ch = "") {
-  const soft = kit === "brushes", rock = kit === "rock", n = (f: BiquadFilterNode, peak: number, dur: number, at = t, wet = 0, a = 0.001) => {
-    const s = r.c.createBufferSource(), g = hit(r, peak * lvl, at, dur, a); s.buffer = r.noise; s.connect(f); f.connect(g); g.connect(r.out); if (wet) send(r, g, wet); s.start(at); s.stop(at + dur + 0.02); return g;
-  }, tone = (type: OscillatorType, f: number, peak: number, dur: number) => { const o = osc(r, type, f), g = hit(r, peak * lvl, t, dur, 0.001); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + dur + 0.03); };
-  if (key === 35 || key === 36) {
+  const soft = kit === "brushes", rock = kit === "rock", edm = kit === "edm", n = (f: BiquadFilterNode | BiquadFilterNode[], peak: number, dur: number, at = t, wet = 0, a = 0.001) => {
+    const s = r.c.createBufferSource(), g = hit(r, peak * lvl, at, dur, a); s.buffer = r.noise; [s, ...[f].flat(), g, r.out].reduce((x: AudioNode, y: AudioNode) => (x.connect(y), y)); if (wet) send(r, g, wet); s.start(at); s.stop(at + dur + 0.02); return g;
+  }, bright = () => { const p = filt(r, "peaking", 5000, 0.8); p.gain.value = 5; return [filt(r, "highpass", 2500), p, filt(r, "lowpass", 13000)]; }, // edm hats: 2.5-13 kHz, most at 3-8 kHz
+  tone = (type: OscillatorType, f: number, peak: number, dur: number) => { const o = osc(r, type, f), g = hit(r, peak * lvl, t, dur, 0.001); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + dur + 0.03); };
+  if ((key === 35 || key === 36) && edm) { // a sine that snaps from 200 to 100 Hz in 25 ms, then glides down to a 45 Hz tail in 0.1 s while it holds most of its level, lightly saturated: the weight sits at 45-100 Hz
+    const o = osc(r, "sine", 200), pre = gain(r, 0.3), ws = r.c.createWaveShaper(), g = gain(r, 0.0001), v = 1.4 * lvl;
+    o.frequency.setValueAtTime(200, t); o.frequency.exponentialRampToValueAtTime(100, t + 0.025); o.frequency.exponentialRampToValueAtTime(45, t + 0.1); ws.curve = TANH;
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.002); g.gain.exponentialRampToValueAtTime(v * 0.5, t + 0.1); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.42);
+    [o, pre, ws, g, r.out].reduce((x: AudioNode, y: AudioNode) => (x.connect(y), y)); o.start(t); o.stop(t + 0.44);
+    n(filt(r, "highpass", 2000), 0.3, 0.008); // the beater
+    duckAt(r, t, ch, kit);
+  } else if (key === 35 || key === 36) {
     const o = osc(r, "sine", rock ? 120 : 160), g = hit(r, (soft ? 0.55 : 0.9) * lvl, t, rock ? 0.3 : 0.38, 0.002);
     o.frequency.setValueAtTime(rock ? 120 : 160, t); o.frequency.exponentialRampToValueAtTime(rock ? 50 : 42, t + (rock ? 0.07 : 0.13)); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.42);
     if (!soft) n(filt(r, "highpass", rock ? 2500 : 3000), rock ? 0.25 : 0.12, 0.012); // the click of the beater
@@ -587,8 +596,8 @@ function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "dru
     o.frequency.setValueAtTime(f * 1.7, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.07); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.5);
     n(filt(r, "bandpass", f * 6, 1), 0.12, 0.04);
   }
-  else if (key === 42 || key === 44) { const o = openHat.get(r.c); if (o) { release({ g: o, oscs: [], rel: 0.02 }, t, t); openHat.delete(r.c); } n(filt(r, "highpass", 7500), soft ? 0.15 : 0.22, 0.05); } // choke the open hat
-  else if (key === 46) openHat.set(r.c, n(filt(r, "highpass", 6500), soft ? 0.14 : 0.2, 0.3));
+  else if (key === 42 || key === 44) { const o = openHat.get(r.c); if (o) { release({ g: o, oscs: [], rel: 0.02 }, t, t); openHat.delete(r.c); } n(edm ? bright() : filt(r, "highpass", 7500), edm ? 0.4 : soft ? 0.15 : 0.22, edm ? 0.06 : 0.05); } // choke the open hat
+  else if (key === 46) openHat.set(r.c, n(edm ? bright() : filt(r, "highpass", 6500), edm ? 0.36 : soft ? 0.14 : 0.2, edm ? 0.35 : 0.3));
   else if (CYMBAL[key]) cymbal(r, fileOf(kit, key, vel)!, t, lvl, vel);
   else if (key === 54) n(filt(r, "bandpass", 8500, 0.9), 0.22, 0.14, t, 0.1);
   else if (key === 56) { // 808 cowbell: two squares, bandpassed, short

@@ -211,6 +211,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `organ` (a recorded drawbar organ, keys 36–96) loops and holds through a rotating speaker. `vel` 0.7 and up adds the percussion click (a decaying high partial) on the attack; below that it only sets loudness.
     - `flute` (a concert flute with vibrato, keys 60–96) loops and holds; one dynamic, so `vel` only sets loudness.
     - `choir` (an "aah" choir, keys 48–84) and `ooh` (voices on "ooh", keys 48–84) loop and hold; one dynamic.
+    - `accordion` (a bandoneon-like tango accordion, keys 48–90) loops and holds for the note's length; one dynamic. Short offbeat chord stabs, or held chords under a melody.
     - `shout` (gang shouts, any key): one shout per note, the word from its `text`: `hey` (the default), `ha`, `woo` or `yeah` (punctuation is ignored). It plays whole whatever the note's length, and the key doesn't change it: the same word on two channels or at two keys just gets louder. `vel` sets loudness.
     - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
@@ -225,6 +226,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - 54 tambourine, 56 cowbell, 70 maracas, 75 claves
     - anything else plays a rim click
   - **`rock`, the same keys for rock:** a lower, punchier kick that does *not* duck the pump (a channel can still follow it with `mix.duckBy`), and a snare with more body, a longer, brighter tail and more room. Everything else is shared with `drums`.
+  - **`edm`, the same keys for electronic music:** a deep kick (35/36) that drops fast to a 45 Hz tail and holds its weight there, so it carries the sub on its own (it ducks the pump like `drums`), and bright hats (42/44 closed, 46 open) that fill 3–8 kHz, where the `drums` hats are thin. Everything else is shared with `drums`.
   - **`brushes`, the same keys for ballads:** a soft round kick (35/36, still ducks the pump), a brush slap on 38, and on 40 a brush swirl that swells in and lasts the note's length, so one note held for the bar sweeps it. Hats are a touch softer; the rest is shared with `drums`.
 - **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
 - **Patterns and clips:**

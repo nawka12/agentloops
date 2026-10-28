@@ -104,7 +104,8 @@ finger/, slap/, choir/  fingerstyle electric bass, slap bass and "aah" choir (th
         a loop (choir: retuned where over 10 cents off, a gain ramp and a crossfade at the loop end, nothing kept after it),
         peak-normalized, and re-encoded to mono 80 kbps MP3. These files remain under CC BY-SA 3.0.
 
-organ/, ooh/  drawbar organ and "ooh" voices (the FluidR3 GM soundfont's drawbar_organ and voice_oohs, by Frank Wen),
+organ/, ooh/, accordion/  drawbar organ, "ooh" voices and tango accordion (the FluidR3 GM soundfont's drawbar_organ,
+        voice_oohs and tango_accordion, by Frank Wen),
         from midi-js-soundfonts (FluidR3_GM): https://github.com/gleitz/midi-js-soundfonts
         Licensed under CC BY 3.0: https://creativecommons.org/licenses/by/3.0/
         Changes made: one sample per 3 semitones, retuned where over 10 cents off, cut to a loop (a gain ramp and a

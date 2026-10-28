@@ -1,5 +1,5 @@
 // Rebuilds the note samples in ui/samples/: Salamander Grand Piano V3 (CC BY 3.0, Alexander Holm), University of Iowa Musical
-// Instrument Samples, VSCO 2 Community Edition (CC0), the Musyng Kite guitars, basses and voices (CC BY-SA 3.0), the FluidR3 organ (CC BY 3.0) and
+// Instrument Samples, VSCO 2 Community Edition (CC0), the Musyng Kite guitars, basses and voices (CC BY-SA 3.0), the FluidR3 organ, voices and accordion (CC BY 3.0) and
 // Freesound shouts (CC0). The MP3s are committed; this script only exists so they can be rebuilt.
 // Needs ffmpeg, curl, tar.
 // Usage: node scripts/samples.mjs [cacheDir [sound...]] (no sounds = all; the others' MP3s are left alone).
@@ -97,6 +97,8 @@ const SETS = {
   organ: { kind: "held", loop: [1, 2.5], tune: 10, sub: true, layers: ["mf"], roots: roots(36, 96), src: FLUID("drawbar_organ") },
   choir: { kind: "held", loop: [1, 2.5], tune: 10, layers: ["mf"], roots: roots(48, 84), src: MK("choir_aahs") },
   ooh: { kind: "held", loop: [1, 2], tune: 10, layers: ["mf"], roots: roots(48, 84), src: FLUID("voice_oohs") }, // Musyng Kite's oohs beat in a deep 1 Hz tremolo (dips of 15-19 dB): no steady loop
+  // A bandoneon-like tango accordion (FluidR3: held chords score 0.50 on YAMNet's accordion class, Musyng Kite's 0.23, both GM musettes under 0.03), held and looped like the voices.
+  accordion: { kind: "held", loop: [1, 2.5], tune: 10, layers: ["mf"], roots: roots(48, 90), src: FLUID("tango_accordion") },
   // Concert flute, sustained with vibrato (one dynamic). The folder names each note an octave low, like the string sections.
   flute: { kind: "held", loop: [1.5, 3.6], tune: 10, oct: "harm", layers: ["mf"], roots: [60, 64, 69, 72, 76, 81, 84, 88, 93, 96],
     src: (m) => `Woodwinds/Flute/susvib/LDFlute_susvib_${low(m)}_v1_1.wav` },
