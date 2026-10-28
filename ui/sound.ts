@@ -48,24 +48,41 @@ const KITS = ["drums", "brushes", "rock"], CYMBAL: Record<number, string> = { 49
 const RATE = 44100; // the sample files' rate: the live context and the export both run at it, so one decode of each file serves both (an AudioBuffer works in any context)
 const BY_PLUGIN: Record<string, string> = { script: "triangle", "llm.agent": "saw", harness: "square" };
 
-/** A sound rig on one audio context: master out (limited), a pump bus that ducks on kicks (`duck` is its gain stage, even when a note gets its own `pump`), a reverb send, shared noise. */
-type Rig = { c: BaseAudioContext; out: GainNode; pump: GainNode; duck: GainNode; verb: GainNode; noise: AudioBuffer; root: Rig }; // root: the rig as made, for a note's copy (export, pan)
-function rig(c: BaseAudioContext, vol: number): Rig {
-  const comp = c.createDynamicsCompressor(); // a limiter so a full band never clips
-  comp.threshold.value = -20; comp.knee.value = 6; comp.ratio.value = 12; comp.attack.value = 0.003; comp.release.value = 0.2;
-  const out = c.createGain(), pump = c.createGain(), verb = c.createGain(), conv = c.createConvolver(), wet = c.createGain();
-  out.gain.value = vol; verb.gain.value = 1; wet.gain.value = 0.32;
-  const len = Math.floor(c.sampleRate * 2.2), ir = c.createBuffer(2, len, c.sampleRate); // a soft hall: decaying stereo noise
-  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) ** 3; }
-  conv.buffer = ir;
-  const nb = c.createBuffer(1, c.sampleRate, c.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
-  pump.connect(out); verb.connect(conv); conv.connect(wet); wet.connect(pump); out.connect(comp); comp.connect(c.destination);
-  const x = { c, out, pump, duck: pump, verb, noise: nb } as Rig; x.root = x; return x;
+/** A sound rig on one audio context: master out (into the master stage), a pump bus that ducks on kicks (`duck` is its gain stage, even when a note gets its own `pump`), a reverb send,
+ *  a tempo-synced delay send (`dly`), shared noise, and the channels' mix chains (see chainOf). root: the rig as made, for a note's copy (export, pan); `bus`: the copy has its own buses (see renderWav) */
+type Rig = { c: BaseAudioContext; out: GainNode; pump: GainNode; duck: GainNode; verb: GainNode; dly: GainNode; delay: DelayNode; fb: GainNode; steps: number; bpm: number; noise: AudioBuffer; chains: Map<string, Chain>; root: Rig; mst?: string; bus?: true };
+const LOOK = 0.006; // a DynamicsCompressor's fixed lookahead (Blink, Gecko and WebKit): everything through one comes out this late
+// The limiter: Web Audio's compressor adds makeup gain, (1 / its gain at 0 dBFS)^0.6, here +0.6 dB. DRIVE sets how loud a song gets, TRIM keeps the true peak near -1 dBTP (docs/plan-mix.md: measurements)
+const DRIVE = 1.8, TRIM = 0.72;
+/** the song's master stage between `out` and the speakers (`mix.master`): "limiter" (default: DRIVE in, -1 dB threshold, ratio 20, fast), "compressor" (the master before the limiter: -20 dB, ratio 12), "none" */
+function master(r: Rig, kind = "limiter") {
+  if (r.mst === kind) return;
+  const c = r.c, k = c.createDynamicsCompressor(), [th, kn, ra, at, re] = kind === "compressor" ? [-20, 6, 12, 0.003, 0.2] : [-1, 0, 20, 0, 0.1];
+  k.threshold.value = th; k.knee.value = kn; k.ratio.value = ra; k.attack.value = at; k.release.value = re;
+  r.out.disconnect(); r.mst = kind;
+  (kind === "none" ? [r.out, c.destination] : kind === "compressor" ? [r.out, k, c.destination] : [r.out, gain(r, DRIVE), k, gain(r, TRIM), c.destination]).reduce((x: AudioNode, y: AudioNode) => (x.connect(y), y));
 }
-let ac: AudioContext | null = null, R: Rig;
+const seeded = (a: number) => () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return (((t ^ (t >>> 14)) >>> 0) / 2 ** 32) * 2 - 1; }; // mulberry32, -1..1
+function rig(c: BaseAudioContext, vol: number, mix: any = {}): Rig {
+  const out = c.createGain(), pump = c.createGain(), verb = c.createGain(), conv = c.createConvolver(), wet = c.createGain(), dly = c.createGain(), delay = c.createDelay(6), fb = c.createGain(), rnd = seeded(1);
+  out.gain.value = vol; verb.gain.value = 1; wet.gain.value = 0.32;
+  const len = Math.floor(c.sampleRate * 2.2), ir = c.createBuffer(2, len, c.sampleRate); // a soft hall: decaying stereo noise, the same in every render (so stems sum to the mix)
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); for (let i = 0; i < len; i++) d[i] = rnd() * (1 - i / len) ** 3; }
+  conv.buffer = ir;
+  const nb = c.createBuffer(1, c.sampleRate, c.sampleRate), nd = nb.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = rnd();
+  pump.connect(out); verb.connect(conv); conv.connect(wet); wet.connect(pump);
+  dly.connect(delay); delay.connect(fb); fb.connect(delay); delay.connect(out); // ponytail: plain digital repeats, not ducked; put a lowpass in the loop if they sound harsh
+  const x = { c, out, pump, duck: pump, verb, dly, delay, fb, steps: 3, bpm: 0, noise: nb, chains: new Map() } as unknown as Rig; x.root = x; setMix(x, mix); return x;
+}
+/** apply a song's `mix` to a rig: the master stage, the delay's time (steps) and feedback; the next note retunes the delay (see tempo) */
+function setMix(r: Rig, m: any = {}) { master(r, m.master); r.steps = m.delay?.time ?? 3; r.fb.gain.value = m.delay?.feedback ?? 0.35; r.bpm = 0; }
+const tempo = (r: Rig, bpm: number) => { if (r.bpm !== bpm) { r.bpm = bpm; r.delay.delayTime.value = Math.min(6, (r.steps * 15) / bpm); } }; // a step is a 16th, 15 / bpm s
+let ac: AudioContext | null = null, R: Rig, song: any = {};
+/** Live: the song's own `mix` (master stage, delay), from every state the studio sends */
+export function songMix(m: any) { song = m ?? {}; if (ac) setMix(R, song); }
 /** Browsers only allow audio after a user gesture: call this from Play, Space and the speaker button. */
 export function unlock() {
-  if (!ac) { try { ac = new AudioContext({ sampleRate: RATE }); } catch { try { ac = new AudioContext(); } catch { return; } } R = rig(ac, sound.vol); loadSamples(ac, want); }
+  if (!ac) { try { ac = new AudioContext({ sampleRate: RATE }); } catch { try { ac = new AudioContext(); } catch { return; } } R = rig(ac, sound.vol, song); loadSamples(ac, want); }
   ac.resume().catch(() => {});
 }
 const live = () => !!ac && sound.on && ac.state === "running";
@@ -105,20 +122,58 @@ function string(r: Rig, f: number, damp = false, p = 0): [AudioBufferSourceNode,
 }
 // The amp: one per channel and pan, shared by the channel's notes, so a chord distorts as one sound. A tight input (highpass 120 Hz, a push at 750 Hz),
 // drive into the tanh shaper (4× oversampled), then a 4×12 cabinet: a thump at 110 Hz, a scoop at 400 Hz, presence at 2.5 kHz, a steep cut above 5 kHz.
-// The channel's gain is set after the distortion (like a fader), then the pan; the reverb send stays centred. Returns the amp's input.
+// The channel's gain is set after the distortion (like a fader), then the pan; the reverb send stays centred. Into the channel's mix chain `x` if it has one. Returns the amp's input.
 const amps = new WeakMap<BaseAudioContext, Map<string, { input: GainNode; vol: GainNode }>>();
-function amp(r: Rig, ch: string, p: number, lvl: number) {
+function amp(r: Rig, ch: string, p: number, lvl: number, x?: Chain) {
   let m = amps.get(r.c); if (!m) amps.set(r.c, (m = new Map()));
-  let a = m.get(`${ch} ${p}`);
+  const k = `${ch} ${p} ${x?.key ?? ""}`;
+  let a = m.get(k);
   if (!a) {
     const eq = (type: BiquadFilterType, f: number, q: number, db = 0) => { const b = filt(r, type, f, q); b.gain.value = db; return b; }, ws = r.c.createWaveShaper();
     ws.curve = TANH; ws.oversample = "4x"; a = { input: gain(r, 30), vol: gain(r) };
     [a.input, eq("highpass", 120, 0.7), eq("peaking", 750, 0.8, 6), ws, eq("highpass", 80, 0.7), eq("peaking", 110, 1, 4), eq("peaking", 400, 1, -5), eq("peaking", 2500, 1.2, 4),
-      eq("lowpass", 5000, 0.7), eq("lowpass", 5000, 0.7), a.vol, pan(r, p), r.out].reduce((x, y) => (x.connect(y), y));
-    send(r, a.vol, 0.12); m.set(`${ch} ${p}`, a);
+      eq("lowpass", 5000, 0.7), eq("lowpass", 5000, 0.7), a.vol, pan(r, p), x?.input ?? r.out].reduce((x, y) => (x.connect(y), y));
+    if (!x?.own) send(r, a.vol, 0.12);
+    m.set(k, a);
   }
   a.vol.gain.value = 0.07 * lvl;
   return a.input;
+}
+
+// A channel's `mix`: one chain per context and channel (and settings), shared by all its notes like amp(), built once and kept for the whole render:
+// EQ (highpass, lowpass, peaking bands), a compressor, then its own duck stage (the sidechain) into `out`. The reverb and delay sends are taken after the
+// compressor, before the duck; `reverb` replaces the sound's own sends (`own`) and goes in mono, so it stays centred like theirs. A note's pan adds the channel's (see note()).
+// Without a `mix` a channel plays straight into the rig as before (the shared pump, the sound's own reverb).
+type Chain = { key: string; input: GainNode; duck: GainNode; depth: number; by?: string; own: boolean };
+const PUMPED = new Set(["pluck", "bell", "marimba"]); // the one-shots that sit on the pump, next to SUSTAIN's `pumped`
+const late = (m: any) => (m?.comp ? LOOK : 0); // a compressed channel plays its notes this much early, so it lands on time
+function chainOf(r: Rig, ch: string, kind: string, m: any): Chain {
+  const key = `${ch} ${kind} ${JSON.stringify(m)}`;
+  let x = r.chains.get(key);
+  if (x) return x;
+  const eq = m.eq ?? {}, cp = m.comp, nodes: AudioNode[] = [gain(r)], duck = gain(r);
+  if (eq.highpass) nodes.push(filt(r, "highpass", eq.highpass));
+  if (eq.lowpass) nodes.push(filt(r, "lowpass", eq.lowpass));
+  for (const b of eq.bands ?? []) { const f = filt(r, "peaking", b.f, b.q ?? 1); f.gain.value = b.db; nodes.push(f); }
+  if (cp) { const d = r.c.createDynamicsCompressor(); d.threshold.value = cp.threshold ?? -18; d.ratio.value = cp.ratio ?? 3; d.knee.value = cp.knee ?? 6; d.attack.value = cp.attack ?? 0.01; d.release.value = cp.release ?? 0.15; nodes.push(d); }
+  const post = nodes[nodes.length - 1];
+  [...nodes, duck, r.out].reduce((a, b) => (a.connect(b), b));
+  if (m.reverb != null) { const s = gain(r, m.reverb); s.channelCount = 1; s.channelCountMode = "explicit"; post.connect(s); s.connect(r.verb); }
+  if (m.delay) { const s = gain(r, m.delay); post.connect(s); s.connect(r.dly); }
+  x = { key, input: nodes[0] as GainNode, duck, depth: m.duck ?? (SUSTAIN[kind]?.pumped || PUMPED.has(kind) ? 0.72 : 0), by: m.duckBy, own: m.reverb != null };
+  r.chains.set(key, x); return x;
+}
+/** a kick on channel ch (kit `kit`) at t: ducks the shared pump (not for `rock`) and each chain that listens: any kick but rock's by default, only its `duckBy` channel's if set */
+function duckAt(r: Rig, t: number, ch: string, kit: string) {
+  const dip = (g: GainNode, depth: number) => { const p = g.gain; p.cancelScheduledValues(t); p.setValueAtTime(1, t); p.linearRampToValueAtTime(1 - depth, t + 0.012); p.setTargetAtTime(1, t + 0.04, 0.09); };
+  if (kit !== "rock") dip(r.root.duck, 0.72);
+  for (const x of r.root.chains.values()) if (x.depth && (x.by ? x.by === ch : kit !== "rock")) dip(x.duck, x.depth);
+}
+/** route a note's rig into node a: live, a copy whose buses are a; an export note's own buses are rewired, so it is still cut loose when the note ends. quiet: drop its reverb sends */
+function into(r: Rig, a: AudioNode, quiet = false): Rig {
+  if (!r.bus) return { ...r, out: a as GainNode, pump: a as GainNode, verb: quiet ? gain(r) : r.verb };
+  r.out.disconnect(); r.out.connect(a); r.pump.disconnect(); r.pump.connect(a); if (quiet) r.verb.disconnect();
+  return r;
 }
 
 // Voice formants for `chop` and `growl`: F1, F2, F3 (Hz, a female voice) and a level. A note's text picks them letter by letter: the vowels a i u e o,
@@ -408,14 +463,17 @@ const release = (v: Voice, now: number, at: number) => {
   g.exponentialRampToValueAtTime(0.0001, at + v.rel); v.oscs.forEach((x) => x.stop(at + v.rel + 0.05));
 };
 /** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise`, `growl` and a `choke`; `bpm` only to `wobble`, `text` only to `chop`, `growl` and `shout` */
-function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120, text?: string) {
-  if (SUSTAIN[kind]?.amp) { // into the channel's amp, which sets the level and pan. An export note's own bus is rewired into it, so it is still cut loose when the note ends
-    const a = amp(r.root, ch, p, lvl);
-    if (r.out === r.root.out) r = { ...r, out: a }; else { r.out.disconnect(); r.out.connect(a); }
+/** `mix`: the channel's mix settings (into its chain; its pan adds to the note's, clamped) */
+function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120, text?: string, mix?: any) {
+  tempo(r.root, bpm);
+  const x = mix ? chainOf(r.root, ch, kind, mix) : undefined;
+  if (x) { r = into(r, x.input, x.own); p = Math.max(-1, Math.min(1, p + (mix.pan ?? 0))); }
+  if (SUSTAIN[kind]?.amp) { // into the channel's amp, which sets the level and pan
+    r = into(r, amp(r.root, ch, p, lvl, x));
     return sustain(r, kind, key, t, 1, vel, p);
   }
   if (p) { const o = pan(r, p), q = pan(r, p); o.connect(r.out); q.connect(r.pump); r = { ...r, out: o, pump: q }; } // a panned note plays into its own panners (the reverb send stays centred; `duck` stays the real pump)
-  if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind);
+  if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind, ch);
   if (kind === "shout") { shout(r, fileOf(kind, key, vel, text)!, t, lvl, vel); return null; }
   if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : kind === "marimba" ? marimba : bell)(r, hz(key), t, lvl); return null; }
   if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel, p, dur);
@@ -423,7 +481,7 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0
 }
 
 const tones = new Map<string, Voice & { until: number }>();
-export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number; text?: string };
+export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number; text?: string; mix?: any }; // mix: the channel's
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
 // Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
 // main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
@@ -443,7 +501,7 @@ export function voiceStart(id: string, key: number, plugin: string, o: VoiceSoun
   if (!live() || tones.has(id)) return;
   const kind = kindOf(plugin, o.sound);
   if (!ONESHOT.has(kind) && tones.size >= MAX) return;
-  const t = when(at), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm, o.text);
+  const t = Math.max(ac!.currentTime, when(at) - late(o.mix)), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm, o.text, o.mix);
   stats.started++;
   if (!v) { stats.stopped++; if (KITS.includes(kind) && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
@@ -500,7 +558,7 @@ const TOMS: Record<number, number> = { 41: 82, 43: 102, 45: 125, 47: 152, 48: 18
  *  in and lasts until released (the returned voice); `rock` is a lower, punchier kick that doesn't duck the pump, and a snare with body and a long bright tail; the rest is shared.
  *  A closed hat (42/44) chokes the open hat (46) before it. */
 const openHat = new WeakMap<BaseAudioContext, GainNode>(); // the last open hat's gain per context (a note's rig is a copy, so not on the rig)
-function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "drums") {
+function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "drums", ch = "") {
   const soft = kit === "brushes", rock = kit === "rock", n = (f: BiquadFilterNode, peak: number, dur: number, at = t, wet = 0, a = 0.001) => {
     const s = r.c.createBufferSource(), g = hit(r, peak * lvl, at, dur, a); s.buffer = r.noise; s.connect(f); f.connect(g); g.connect(r.out); if (wet) send(r, g, wet); s.start(at); s.stop(at + dur + 0.02); return g;
   }, tone = (type: OscillatorType, f: number, peak: number, dur: number) => { const o = osc(r, type, f), g = hit(r, peak * lvl, t, dur, 0.001); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + dur + 0.03); };
@@ -508,7 +566,7 @@ function drum(r: Rig, key: number, t: number, lvl: number, vel = 0.5, kit = "dru
     const o = osc(r, "sine", rock ? 120 : 160), g = hit(r, (soft ? 0.55 : 0.9) * lvl, t, rock ? 0.3 : 0.38, 0.002);
     o.frequency.setValueAtTime(rock ? 120 : 160, t); o.frequency.exponentialRampToValueAtTime(rock ? 50 : 42, t + (rock ? 0.07 : 0.13)); o.connect(g); g.connect(r.out); o.start(t); o.stop(t + 0.42);
     if (!soft) n(filt(r, "highpass", rock ? 2500 : 3000), rock ? 0.25 : 0.12, 0.012); // the click of the beater
-    if (!rock) { const p = r.duck.gain; p.cancelScheduledValues(t); p.setValueAtTime(1, t); p.linearRampToValueAtTime(0.28, t + 0.012); p.setTargetAtTime(1, t + 0.04, 0.09); }
+    duckAt(r, t, ch, kit);
   } else if (soft && key === 40) { // the swirl: bandpassed noise, a slow wobble in the band, swelling in
     const s = r.c.createBufferSource(), bp = filt(r, "bandpass", 2400, 0.5), lfo = osc(r, "sine", 1.7), ld = gain(r, 700), g = gain(r, 0.0001);
     s.buffer = r.noise; s.loop = true; lfo.connect(ld); ld.connect(bp.frequency); s.connect(bp); bp.connect(g); g.connect(r.out); send(r, g, 0.2);
@@ -555,24 +613,33 @@ export function chime() { stats.events++; if (!live()) return; ping([1568], "sin
 export function click(accent: boolean) { if (!live() || !sound.metro) return; ping([accent ? 1760 : 1175], "sine", accent ? 0.16 : 0.09, 0.05); stats.clicks++; }
 
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
-export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number; text?: string }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number }[] };
-/** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out. */
-export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
-  const pre = Math.floor(0.006 * rate); // the limiter's fixed 6 ms lookahead (DynamicsCompressor in Blink, Gecko and WebKit) delays everything: render it, then cut it off
-  const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate) + pre;
-  const c = new OfflineAudioContext(2, length, rate), r = rig(c, 0.8), chs = new Map(s.channels.map((x) => [x.id, x]));
-  const kindAt = (id: string) => kindOf(chs.get(id)?.plugin ?? "script", chs.get(id)?.sound);
-  const miss = await loadSamples(c, s.notes.flatMap((n) => fileOf(kindAt(n.ch), n.key, n.vel ?? 0.5, n.text) ?? [])); // decode before rendering starts (a no-op for the files the live tab has)
+export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number; text?: string }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number; mix?: any }[]; mix?: any };
+/** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out.
+ *  stem: render only that channel, pre-master (no master stage), with its own reverb and delay, still ducked by the other channels' kicks (they play silently) */
+export async function renderWav(s: Score, rate = RATE, stem?: string): Promise<ArrayBuffer> {
+  // A compressor's lookahead delays what goes through it by `pre` frames: every note is scheduled `pre` late, so a compressed channel can start that much early
+  // (see late()), and the file starts `pre` in, plus `pre` more for the master stage's own
+  const m = stem ? { ...s.mix, master: "none" } : s.mix ?? {}, pre = Math.floor(LOOK * rate), lead = pre / rate, skip = pre + (m.master === "none" ? 0 : pre);
+  const sec = (ticks: number) => (ticks * 60) / s.bpm / 96, length = Math.ceil((sec(s.end) + 2) * rate) + skip;
+  const c = new OfflineAudioContext(2, length, rate), r = rig(c, 0.8, m), chs = new Map(s.channels.map((x) => [x.id, x]));
+  const kindAt = (id: string) => kindOf(chs.get(id)?.plugin ?? "script", chs.get(id)?.sound), time = (n: Score["notes"][number]) => sec(n.start) + lead - late(chs.get(n.ch)?.mix);
+  const kick = (n: Score["notes"][number]) => KITS.includes(kindAt(n.ch)) && (n.key === 35 || n.key === 36);
+  const notes = s.notes.filter((n) => !stem || n.ch === stem || kick(n)).sort((a, b) => time(a) - time(b)), plays = (n: Score["notes"][number]) => !stem || n.ch === stem; // time order: each kick's pump automation cancels what follows it
+  const miss = await loadSamples(c, notes.filter(plays).flatMap((n) => fileOf(kindAt(n.ch), n.key, n.vel ?? 0.5, n.text) ?? [])); // decode before rendering starts (a no-op for the files the live tab has)
   if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
+  tempo(r, s.bpm);
+  for (const id of new Set(notes.filter(plays).map((n) => n.ch))) if (chs.get(id)?.mix) chainOf(r, id, kindAt(id), chs.get(id)!.mix); // every chain up front, so the first kick already ducks it
   // Speed: every node wired to the output is processed in every block, sounding or not, so notes are made just ahead of the render (at a
-  // suspend each second) and each plays into its own bus, cut loose once its sources have ended (offline, nothing garbage-collects them).
-  const made: AudioScheduledSourceNode[] = [], ended: GainNode[][] = [], notes = [...s.notes].sort((a, b) => a.start - b.start); // time order: each kick's pump automation cancels what follows it
+  // suspend each second) and each plays into its own bus, cut loose once its sources have ended (offline, nothing garbage-collects them). The chains stay.
+  const made: AudioScheduledSourceNode[] = [], ended: GainNode[][] = [];
   for (const k of ["createOscillator", "createBufferSource"] as const) { const f: any = c[k].bind(c); (c as any)[k] = () => { const x = f(); made.push(x); return x; }; }
   let i = 0;
-  const upTo = (until: number) => { for (; i < notes.length && sec(notes[i].start) < until; i++) {
-    const n = notes[i], t = sec(n.start), b = { ...r, out: gain(r), pump: gain(r), verb: gain(r) }, bus = [b.out, b.pump, b.verb];
+  const upTo = (until: number) => { for (; i < notes.length && time(notes[i]) < until; i++) {
+    const n = notes[i], t = time(n);
+    if (!plays(n)) { duckAt(r, t, n.ch, kindAt(n.ch)); continue; }
+    const b: Rig = { ...r, out: gain(r), pump: gain(r), verb: gain(r), bus: true }, bus = [b.out, b.pump, b.verb];
     b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
-    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm, n.text);
+    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm, n.text, chs.get(n.ch)?.mix);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
     let left = made.length;
     if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };
@@ -580,7 +647,7 @@ export async function renderWav(s: Score, rate = RATE): Promise<ArrayBuffer> {
   const lazy = typeof (c as any).suspend === "function"; // Gecko has no OfflineAudioContext.suspend(): there every note is made up front (slow on long songs)
   upTo(lazy ? 2 : Infinity);
   if (lazy) for (let at = 1; at < length / rate; at++) c.suspend(at).then(() => { for (const bus of ended.splice(0)) bus.forEach((g) => g.disconnect()); upTo(at + 2); c.resume(); }); // 1-2 s ahead
-  return wav(await c.startRendering(), pre);
+  return wav(await c.startRendering(), skip);
 }
 /** AudioBuffer → 16-bit PCM WAV bytes, minus its first `skip` frames */
 function wav(b: AudioBuffer, skip = 0): ArrayBuffer {

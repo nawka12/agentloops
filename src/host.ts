@@ -1,6 +1,6 @@
 // The Studio host: owns the project, one undo stack for every source, runs, the harness bridge and the tool implementations.
 // `agentloops mcp` (headless) and `agentloops studio` each create one; the MCP process relays to the studio's when one is open (see mcp.ts).
-import { existsSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
@@ -87,7 +87,7 @@ export const RANK = { read: 0, edit: 1, run: 2 } as const;
 const PANELS = ["playlist", "rack", "pianoroll", "mixer", "tracer", "monitor"];
 const NO_STUDIO = "no studio open: run `agentloops studio <file>` to see it";
 const NO_EXPORT = "open the studio (`agentloops studio <file>`) to export audio: it renders the sound in a browser";
-const EXPORT_FILE = /^[\w.-]+\.(mp3|wav)$/;
+const EXPORT_FILE = /^[\w.-]+\.(mp3|wav)$/, STEM_DIR = /^\w[\w.-]*$/, STEM = /^\d\d+-.*\.wav$/; // a stem is <nn>-<channel id>.wav, nn its place in the channel list
 const clip = (s: any, n = 200) => { s = typeof s === "string" ? s : JSON.stringify(s); return s == null ? s : s.length > n ? s.slice(0, n) + "…" : s; };
 // validate() is not shape-hardened; a crash on a half-built project is reported as one error instead of rejecting the edit
 export const check = (p: any): Err[] => { try { return validate(p); } catch (e: any) { return [{ path: "/", message: `project cannot be validated: ${e.message}`, fix: "Check the types of the fields you just edited (arrays vs objects vs strings)" }]; } };
@@ -264,22 +264,38 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     // export (renders in the studio's browser)
     {
       name: "audio_export", scope: "edit",
-      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). About 0.3x the song's length (slower if a Firefox tab renders it), progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated).",
-      inputSchema: obj({ file: S, format: S, arrangement: S, pattern: S, overwrite: B }),
+      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). About 0.3x the song's length (slower if a Firefox tab renders it), progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated). stems:true instead writes one WAV per channel that sounds (mute/solo apply) into a folder (file: a plain folder name, default <song>-stems), named <nn>-<channel id>.wav (nn: its place in the channel list), all the length of the mix from the song's start: pre-master (no limiter), each with its own reverb and delay, ducked by the kick like in the mix; they sum to the mix before the master stage. One render per stem, in one browser. overwrite:true replaces the folder's old stems. Returns {folder, stems: [{channel, file}], seconds, renderedBy}.",
+      inputSchema: obj({ file: S, format: S, arrangement: S, pattern: S, overwrite: B, stems: B }),
       run: async (a: any, c: Ctx) => {
         if (!h.render) throw new Error(NO_EXPORT);
-        const s = cur(), dir = dirname(s.file), slug = String(s.p.name ?? "song").toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "song";
+        const s = cur(), dir = dirname(s.file), slug = String(s.p.name ?? "song").toLowerCase().replace(/[^\w]+/g, "-").replace(/^-+|-+$/g, "") || "song", pat = a.pattern ? `-${String(a.pattern).replace(/[^\w.-]+/g, "-")}` : "";
+        if (a.pattern != null && !(s.p.patterns ?? []).some((x: any) => x.id === a.pattern)) throw new Error(`unknown pattern '${a.pattern}'`);
+        if (a.arrangement != null && !(s.p.arrangements ?? []).some((x: any) => x.id === a.arrangement)) throw new Error(`unknown arrangement '${a.arrangement}'`);
+        if (a.stems === true) { // one WAV per channel, written as each lands
+          if (a.format != null && a.format !== "wav") throw new Error('stems are WAV only: leave out format or pass "wav"');
+          if (a.file != null && !STEM_DIR.test(a.file)) throw new Error("file must be a plain folder name like song-stems (letters, digits, _ . -; no slashes)");
+          const name = a.file ?? `${slug}${pat}-stems`, out = join(dir, name), idx = new Map<string, number>((s.p.channels ?? []).map((x: any, i: number) => [x.id, i])), stems: { channel: string; file: string }[] = [];
+          if (existsSync(out) && a.overwrite !== true) throw new Error(`${out} already exists: pass overwrite:true or another file name`);
+          let seconds = 0; c.summary = `${name}/`;
+          const { wav: mixed, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern, stems: true }, c, (ch, wav) => {
+            if (!idx.has(ch) || stems.some((x) => x.channel === ch)) throw new Error(`unexpected stem '${ch}'`);
+            if (!stems.length) { mkdirSync(out, { recursive: true }); for (const f of readdirSync(out)) if (STEM.test(f)) rmSync(join(out, f)); } // only once the render works: the old stems go, other files stay
+            const file = join(out, `${String(idx.get(ch)! + 1).padStart(2, "0")}-${ch.replace(/[^\w.-]+/g, "-")}.wav`);
+            writeFileSync(file, wav); stems.push({ channel: ch, file }); seconds = wavSeconds(wav); c.progress(`stem ${stems.length}: ${ch}`);
+          });
+          if (mixed) throw new Error("the studio tab rendered the mix, not stems: it runs an older AgentLoops, so reload it and retry");
+          if (!stems.length) throw new Error("no channel sounds in this range (all muted, or no notes)");
+          return { folder: out, stems, seconds: Math.round(seconds * 100) / 100, renderedBy: by };
+        }
         if (a.file != null && !EXPORT_FILE.test(a.file)) throw new Error("file must be a plain name like song.mp3 or song.wav (letters, digits, _ . -; no folders)");
         if (a.format != null && !["mp3", "wav"].includes(a.format)) throw new Error('format must be "mp3" or "wav"');
         const format = (a.format ?? (a.file ? EXPORT_FILE.exec(a.file)![1] : "mp3")) as "mp3" | "wav";
         if (a.file && EXPORT_FILE.exec(a.file)![1] !== format) throw new Error(`file ${a.file} does not match format ${format}`);
-        const name = a.file ?? `${slug}${a.pattern ? `-${String(a.pattern).replace(/[^\w.-]+/g, "-")}` : ""}.${format}`, out = join(dir, name);
+        const name = a.file ?? `${slug}${pat}.${format}`, out = join(dir, name);
         const ffmpeg = format === "mp3" ? which("ffmpeg") : null, wavOut = format === "wav" || !ffmpeg ? out.replace(/\.mp3$/, ".wav") : out; // no ffmpeg: the WAV is what we keep
         if (existsSync(wavOut) && a.overwrite !== true) throw new Error(`${wavOut} already exists: pass overwrite:true or another file name`);
-        if (a.pattern != null && !(s.p.patterns ?? []).some((x: any) => x.id === a.pattern)) throw new Error(`unknown pattern '${a.pattern}'`);
-        if (a.arrangement != null && !(s.p.arrangements ?? []).some((x: any) => x.id === a.arrangement)) throw new Error(`unknown arrangement '${a.arrangement}'`);
         c.summary = name;
-        const { wav, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern }, c);
+        const { wav: w, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern }, c), wav = w!;
         const r = await saveAudio(wav, { out, wavOut, format, ffmpeg, title: String(s.p.name ?? slug), overwrite: a.overwrite === true, signal: c.signal });
         return { ...r, seconds: Math.round(wavSeconds(wav) * 100) / 100, renderedBy: by };
       },
@@ -369,7 +385,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     /** Set by the studio once it listens; makes studio_status/focus/view live. */
     studioUrl: undefined as string | undefined,
     /** Set by the studio: have a browser render the score to WAV bytes (audio_export). Absent when headless. */
-    render: undefined as undefined | ((req: { arrangement?: string; pattern?: string }, c: Ctx) => Promise<{ wav: Buffer; by: "tab" | "headless" }>),
+    render: undefined as undefined | ((req: { arrangement?: string; pattern?: string; stems?: boolean }, c: Ctx, stem?: (ch: string, wav: Buffer) => void) => Promise<{ wav: Buffer | null; by: "tab" | "headless" }>),
     /** The latest {panel, pattern, channel, voice, selection} the studio UI posted. */
     view: { panel: null, pattern: null, channel: null, voice: null, selection: null } as any,
   };

@@ -24,19 +24,20 @@ export function wavSeconds(b: Buffer): number {
   return b.length < 44 || b.toString("latin1", 0, 4) !== "RIFF" || b.toString("latin1", 8, 12) !== "WAVE" ? NaN : b.readUInt32LE(40) / b.readUInt32LE(28);
 }
 
-type Job = { acked: () => void; ok: (b: Buffer) => void; bad: (e: Error) => void };
-type Req = { arrangement?: string; pattern?: string };
+type Job = { acked: () => void; ok: (b: Buffer | null) => void; bad: (e: Error) => void; stem?: (ch: string, b: Buffer) => void }; // ok(null): every stem has been uploaded
+type Req = { arrangement?: string; pattern?: string; stems?: boolean };
 
 /** The studio's export broker. `send(client, type, data)` writes an SSE event to one tab, `last()` is the tab to ask (null: none connected). */
 export function exporter(o: { last: () => any; send: (client: any, type: string, data: any) => void; url: () => string }) {
   const jobs = new Map<string, Job>();
 
-  async function render(req: Req, c: { signal: AbortSignal; progress: (m: string) => void }): Promise<{ wav: Buffer; by: "tab" | "headless" }> {
+  /** `stems`: the browser uploads one WAV per channel to /api/export/:id/stem?ch=<id>, each handed to `stem` as it lands, then ends with {done: true}: `wav` is null */
+  async function render(req: Req, c: { signal: AbortSignal; progress: (m: string) => void }, stem?: (ch: string, b: Buffer) => void): Promise<{ wav: Buffer | null; by: "tab" | "headless" }> {
     if (c.signal.aborted) throw new Error("cancelled");
     const id = randomBytes(8).toString("hex"), t0 = Date.now(), tab = o.last();
     let by: "tab" | "headless" = "tab", kill = () => {}, ack!: () => void;
     const acked = new Promise<boolean>((ok) => (ack = () => ok(true)));
-    const done = new Promise<Buffer>((ok, bad) => jobs.set(id, { acked: ack, ok, bad }));
+    const done = new Promise<Buffer | null>((ok, bad) => jobs.set(id, { acked: ack, ok, bad, stem }));
     done.catch(() => {}); // the race below reports it; this keeps a late rejection from being unhandled
     const cancel = () => { if (tab) try { o.send(tab, "export-cancel", { id }); } catch {} };
     const abort = () => { cancel(); kill(); jobs.get(id)?.bad(new Error("cancelled")); };
@@ -62,7 +63,7 @@ export function exporter(o: { last: () => any; send: (client: any, type: string,
   function headless(id: string, req: Req, base: string, fail: (e: Error) => void) {
     const bin = which(...BROWSERS);
     if (!bin) { queueMicrotask(() => fail(new Error("no studio tab is open and no headless browser was found: install Chromium (chromium, chromium-browser, google-chrome on PATH), or open the studio in a browser (agentloops studio <file>) and retry"))); return () => {}; }
-    const dir = mkdtempSync(join(tmpdir(), "alp-export-")), q = new URLSearchParams({ export: id, ...(req.arrangement ? { arrangement: req.arrangement } : {}), ...(req.pattern ? { pattern: req.pattern } : {}) });
+    const dir = mkdtempSync(join(tmpdir(), "alp-export-")), q = new URLSearchParams({ export: id, ...(req.arrangement ? { arrangement: req.arrangement } : {}), ...(req.pattern ? { pattern: req.pattern } : {}), ...(req.stems ? { stems: "1" } : {}) });
     const args = ["--headless=new", "--disable-gpu", "--mute-audio", "--no-first-run", "--disable-dev-shm-usage", "--disable-background-timer-throttling", "--disable-renderer-backgrounding", `--user-data-dir=${dir}`,
       ...(process.getuid?.() === 0 ? ["--no-sandbox"] : []), `${base}?${q}`];
     const p = spawn(bin, args, { stdio: ["ignore", "ignore", "pipe"], detached: true });

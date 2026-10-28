@@ -200,7 +200,7 @@ test("every sound renders: not silent, level within 10 dB of triangle", { skip: 
   const sounds = SOUNDS.filter((x) => x !== "auto"), BAR = 2; // 120 BPM: a bar is 2 s; each sound plays one half-bar note in its own bar (a kick for drums, a crash for rock, a ride for brushes)
   const key = (x: string) => (x === "drums" ? 36 : x === "rock" ? 49 : x === "brushes" ? 51 : 60);
   const { file, s } = await setup({
-    format: "agentloops/1", name: "Sounds", clock: { bpm: 120 },
+    format: "agentloops/1", name: "Sounds", clock: { bpm: 120 }, mix: { master: "compressor" }, // the old master compressor, which the levels and the ±10 dB were set through: it evens them out by ~5 dB (through the limiter sub sits at +15, trombone at +11)
     channels: sounds.map((x) => ({ id: x, name: x, sound: x, generator: { plugin: "script", params: { code: "return 'x';" } }, keymap: [{ key: key(x), name: "n", template: "x" }] })),
     patterns: [{ id: "p", lengthSteps: 16 * sounds.length, notes: Object.fromEntries(sounds.map((x, i) => [x, [{ start: `${i + 1}:01`, len: 192, key: key(x) }]])) }],
     arrangements: [{ id: "a", clips: [{ ref: "p", start: "1:01" }] }],

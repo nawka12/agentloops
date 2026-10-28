@@ -132,8 +132,8 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
       const plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
       const on = new Set(chs.filter((c) => !c.mute && (!solo || c.solo)).map((c) => c.id));
       const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len, vel: n.vel, pan: n.pan, text: n.text }));
-      json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes,
-        channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain })) });
+      json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes, mix: p.mix,
+        channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain, mix: c.mix })) });
     },
     // the browser's half of audio_export: ack = "I am rendering it" (no ack in 10 s and the host goes headless); the upload is the WAV, or JSON {error}
     "POST /api/export/(\\w+)/ack": async (_q, res, m) => { const j = ex.jobs.get(m[1]); if (!j) return json(res, 404, { error: "unknown or expired export" }); j.acked(); json(res, 200, { ok: true }); },
@@ -141,10 +141,20 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
       const j = ex.jobs.get(m[1]);
       if (!j) return json(res, 404, { error: "unknown or expired export" });
       try {
-        if (req.headers["content-type"]?.startsWith("application/json")) { const a = await body(req); j.bad(new Error(`the browser could not render the audio: ${a.error ?? "unknown error"}`)); return json(res, 200, { ok: true }); }
+        if (req.headers["content-type"]?.startsWith("application/json")) { const a = await body(req); if (a.done === true && j.stem) j.ok(null); else j.bad(new Error(`the browser could not render the audio: ${a.error ?? "unknown error"}`)); return json(res, 200, { ok: true }); }
         const wav = await raw(req, MAX_WAV);
         if (!(wavSeconds(wav) >= 0)) throw new Error("not a WAV file");
         j.ok(wav); json(res, 200, { ok: true });
+      } catch (e: any) { j.bad(e); throw e; }
+    },
+    // one stem of a stems export (?ch=<channel id>), handed to the host as it lands so a long song's stems never sit in memory together
+    "POST /api/export/(\\w+)/stem": async (req, res, m) => {
+      const j = ex.jobs.get(m[1]);
+      if (!j?.stem) return json(res, 404, { error: "unknown or expired stems export" });
+      try {
+        const wav = await raw(req, MAX_WAV);
+        if (!(wavSeconds(wav) >= 0)) throw new Error("not a WAV file");
+        j.stem(new URL(req.url ?? "/", "http://x").searchParams.get("ch") ?? "", wav); json(res, 200, { ok: true });
       } catch (e: any) { j.bad(e); throw e; }
     },
     // the UI's Shift+⤓: the same path as the MCP tool, saved as an MP3 in the project folder
@@ -257,7 +267,7 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
     // only this origin: block DNS rebinding (Host) and cross-site POSTs (a page elsewhere could otherwise patch in a script and run it)
     const host = `127.0.0.1:${port}`, origin = req.headers.origin;
     if (![host, `localhost:${port}`].includes(req.headers.host ?? "") || (origin && origin !== `http://${req.headers.host}`)
-      || (req.method === "POST" && !String(req.headers["content-type"]).startsWith("application/json") && !(req.headers["content-type"] === "audio/wav" && /^\/api\/export\/\w+$/.test(req.url ?? "")))) return json(res, 403, { error: "forbidden" });
+      || (req.method === "POST" && !String(req.headers["content-type"]).startsWith("application/json") && !(req.headers["content-type"] === "audio/wav" && /^\/api\/export\/\w+(\/stem\?ch=[^&]*)?$/.test(req.url ?? "")))) return json(res, 403, { error: "forbidden" });
     const url = new URL(req.url ?? "/", "http://x");
     for (const [k, h] of Object.entries(routes)) {
       const [method, pat] = k.split(" "), m = new RegExp(`^${pat}$`).exec(url.pathname);

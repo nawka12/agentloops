@@ -44,6 +44,7 @@ const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
 // channel `sound` (sonification instrument); keep in sync with SOUNDS in ui/sound.ts
 export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax", "trumpet", "trombone", "epiano", "organ", "upright", "vibes", "brushes", "eguitar", "distguitar", "ebass", "rock", "guitar", "pad", "noise", "strings", "violin", "harp", "glock", "timpani", "choir", "reese", "acid", "wobble", "808", "brass", "flute", "marimba", "heavy", "crunch", "chug", "clean", "pizz", "chop", "growl", "finger", "slap", "ooh", "shout", "synorgan", "whistle", "synchoir"];
+const KITS = ["drums", "brushes", "rock"], MASTERS = ["limiter", "compressor", "none"]; // the drum kits (their kick ducks), and the song's master stages (ui/sound.ts master())
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
 
@@ -124,6 +125,54 @@ export function validate(p: any): Err[] {
     if (c.onFail != null && !["stop", "skip"].includes(c.onFail)) err(at("onFail"), `onFail ${JSON.stringify(c.onFail)} is not supported yet`, 'Use "stop" or "skip"');
     if (c.context != null && !["fresh", "persistent", "per-pattern"].includes(c.context)) err(at("context"), `Bad context ${JSON.stringify(c.context)}`, 'Use "fresh", "persistent" or "per-pattern"');
   });
+  channels.forEach((c, i) => c?.mix != null && mixChannel(c.mix, (...k) => ptr("channels", i, "mix", ...k))); // after the loop: duckBy may name a later channel
+  // the audio mix (ui/sound.ts): a channel's `mix`, and the song's `mix` (master stage, shared delay). Not `mixer`, which routes the agents' frames
+  function range(path: string, v: any, lo: number, hi: number, eg: string) {
+    if (v != null && !(typeof v === "number" && v >= lo && v <= hi)) err(path, `${path.split("/").pop()} must be a number from ${lo} to ${hi}`, `Use e.g. ${eg}`);
+  }
+  function only(o: any, path: string, keys: string[], eg: string) { // an object with known keys only, so a typo is an error and not a silent no-op
+    if (!o || typeof o !== "object" || Array.isArray(o)) { err(path, `${path.split("/").pop()} must be an object`, `e.g. ${eg}`); return false; }
+    for (const k of Object.keys(o)) if (!keys.includes(k)) err(`${path}${ptr(k)}`, `Unknown setting "${k}"`, `Use ${keys.join(", ")}`);
+    return true;
+  }
+  function mixChannel(m: any, at: (...k: (string | number)[]) => string) {
+    if (!only(m, at(), ["pan", "eq", "comp", "reverb", "delay", "duck", "duckBy"], '{"pan": -0.3, "reverb": 0.2}')) return;
+    range(at("pan"), m.pan, -1, 1, "-0.3 (left) or 0.3 (right)");
+    for (const k of ["reverb", "delay", "duck"]) range(at(k), m[k], 0, 1, k === "duck" ? "0.7 (the default for pumped sounds)" : "0.2");
+    if (m.duckBy != null) {
+      const d = chById.get(m.duckBy);
+      if (!d) err(at("duckBy"), `Unknown channel '${m.duckBy}'`, `Name a drums channel: ${channels.filter((x) => KITS.includes(x.sound)).map((x) => x.id).join(", ") || "none yet"}`);
+      else if (!KITS.includes(d.sound)) err(at("duckBy"), `Channel '${m.duckBy}' is not a drum kit, so it has no kick`, `Name a channel whose sound is ${KITS.join(", ")}`);
+    }
+    if (m.eq != null && only(m.eq, at("eq"), ["highpass", "lowpass", "bands"], '{"highpass": 120, "bands": [{"f": 350, "q": 1, "db": -3}]}')) {
+      range(at("eq", "highpass"), m.eq.highpass, 20, 20000, "120");
+      range(at("eq", "lowpass"), m.eq.lowpass, 20, 20000, "9000");
+      if (m.eq.highpass < 20000 && m.eq.lowpass >= 20 && m.eq.highpass >= m.eq.lowpass) err(at("eq", "lowpass"), "lowpass must be above highpass, or nothing passes", "Raise lowpass or lower highpass");
+      const bs = m.eq.bands;
+      if (bs != null && !(Array.isArray(bs) && bs.length <= 8)) err(at("eq", "bands"), "bands must be an array of at most 8 bands", 'e.g. [{"f": 350, "q": 1, "db": -3}]');
+      else (bs ?? []).forEach((b: any, j: number) => {
+        if (!only(b, at("eq", "bands", j), ["f", "q", "db"], '{"f": 350, "q": 1, "db": -3}')) return;
+        if (b.f == null || b.db == null) err(at("eq", "bands", j), "A band needs f (Hz) and db", '{"f": 350, "q": 1, "db": -3}');
+        range(at("eq", "bands", j, "f"), b.f, 20, 20000, "350");
+        range(at("eq", "bands", j, "q"), b.q, 0.1, 30, "1 (wide) to 8 (narrow)");
+        range(at("eq", "bands", j, "db"), b.db, -24, 24, "-3 (cut) or 3 (boost)");
+      });
+    }
+    if (m.comp != null && only(m.comp, at("comp"), ["threshold", "ratio", "knee", "attack", "release"], '{"threshold": -18, "ratio": 3}')) {
+      range(at("comp", "threshold"), m.comp.threshold, -60, 0, "-18 (dB)");
+      range(at("comp", "ratio"), m.comp.ratio, 1, 20, "3");
+      range(at("comp", "knee"), m.comp.knee, 0, 40, "6 (dB)");
+      range(at("comp", "attack"), m.comp.attack, 0, 1, "0.01 (s)");
+      range(at("comp", "release"), m.comp.release, 0, 1, "0.15 (s)");
+    }
+  }
+  if (p.mix != null && only(p.mix, "/mix", ["master", "delay"], '{"master": "limiter", "delay": {"time": 3, "feedback": 0.35}}')) {
+    if (p.mix.master != null && !MASTERS.includes(p.mix.master)) err("/mix/master", `Unknown master ${JSON.stringify(p.mix.master)}`, `Use ${MASTERS.map((x) => `"${x}"`).join(", ")} ("compressor" brings back the old master compressor)`);
+    if (p.mix.delay != null && only(p.mix.delay, "/mix/delay", ["time", "feedback"], '{"time": 3, "feedback": 0.35}')) {
+      range("/mix/delay/time", p.mix.delay.time, 0.25, 16, "3 (steps: a dotted 8th)");
+      range("/mix/delay/feedback", p.mix.delay.feedback, 0, 0.95, "0.35");
+    }
+  }
 
   // buses: slots, sends, cycles
   const edges = new Map<string, { to: string; path: string }[]>();

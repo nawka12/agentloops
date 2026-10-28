@@ -4,12 +4,17 @@ import { h, render } from "preact";
 import htm from "htm";
 import { Mixer, Monitor, Piano, Playlist, Rack, Tracer, clipsOf, selChannel } from "./panels.ts";
 import { Browser, ChannelWin, LoopPop, Menu, Picker, SlotEditor, loadCatalog, loadSongs, openLoop, openPicker, newPattern, patternMenu } from "./make.ts";
-import { blip, chime, click, preload, renderWav, setMetro, setOn, setVol, sound, heard, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
+import { blip, chime, click, preload, renderWav, setMetro, setOn, setVol, songMix, sound, heard, stopAll, unlock, voiceEnd, voiceStart } from "./sound.ts";
 
-/** fetch the score for a query string ("pattern=x" or "arrangement=y") and bounce it offline to WAV bytes */
-async function bounce(q: string, tempo?: number) {
+/** the score for a query string ("pattern=x" or "arrangement=y") */
+async function getScore(q: string) {
   const score = await (await fetch(`/api/score?${q}`)).json();
   if (score.error) throw new Error(score.error);
+  return score;
+}
+/** fetch the score and bounce it offline to WAV bytes */
+async function bounce(q: string, tempo?: number) {
+  const score = await getScore(q);
   return { score, wav: await renderWav({ ...score, ...(tempo ? { bpm: tempo } : {}) }) };
 }
 /** Ctrl+Alt+R: bounce the song (SONG) or current pattern (PAT) to a WAV, offline, and download it. Shift: the host saves an MP3 in the project folder instead. */
@@ -35,10 +40,21 @@ export async function exportAudio(toFolder = false) {
 
 /** The host asked this tab (or a headless browser, via ?export=<id>) to render audio: bounce, then upload to /api/export/:id (or report the error). */
 const cancelled = new Set<string>();
-async function hostExport(x: { id: string; arrangement?: string; pattern?: string }) {
-  const up = (body: BodyInit, type: string) => fetch(`/api/export/${x.id}`, { method: "POST", headers: { "content-type": type }, body });
+async function hostExport(x: { id: string; arrangement?: string; pattern?: string; stems?: boolean }) {
+  const up = (body: BodyInit, type: string, to = "") => fetch(`/api/export/${x.id}${to}`, { method: "POST", headers: { "content-type": type }, body });
   try {
     const q = x.pattern ? `pattern=${encodeURIComponent(x.pattern)}` : x.arrangement ? `arrangement=${encodeURIComponent(x.arrangement)}` : "";
+    if (x.stems) { // one render per channel that sounds, one after the other in this page, each uploaded before the next starts
+      const score = await getScore(q), on = new Set(score.notes.map((n: any) => n.ch));
+      for (const c of score.channels.filter((c: any) => on.has(c.id))) {
+        const wav = await renderWav(score, undefined, c.id);
+        if (cancelled.delete(x.id)) return;
+        const r = await up(wav, "audio/wav", `/stem?ch=${encodeURIComponent(c.id)}`);
+        if (!r.ok) throw new Error((await r.json()).error);
+      }
+      await up(JSON.stringify({ done: true }), "application/json");
+      return;
+    }
     const { wav } = await bounce(q);
     if (cancelled.delete(x.id)) return;
     const r = await up(wav, "audio/wav");
@@ -133,7 +149,7 @@ function applyEvent(e: any, live: boolean) {
     const id = `${e.runId}:${e.voice}`;
     if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
       const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
-      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, text: e.text, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm() }, e.at);
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, text: e.text, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm(), mix: c?.mix }, e.at);
     }
     if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel), e.at);
     if (e.type === "frame" && e.kind === "error") blip();
@@ -196,6 +212,7 @@ function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
   Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null });
   preload(st.project); // the sample files the song plays start downloading when it opens or changes
+  songMix(st.project?.mix);
   if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;
   if (ids.size) { pending = { ids, at: Date.now() }; tryFlash(); }
@@ -521,7 +538,7 @@ setInterval(() => S.project && paint(), 1000); // "3s ago" labels
 // ?export=<id>: a headless browser opened by the host only renders that export (no state, no SSE, no windows) and never goes on to boot the studio
 const xq = new URLSearchParams(location.search), xid = xq.get("export");
 if (xid) {
-  await hostExport({ id: xid, arrangement: xq.get("arrangement") ?? undefined, pattern: xq.get("pattern") ?? undefined });
+  await hostExport({ id: xid, arrangement: xq.get("arrangement") ?? undefined, pattern: xq.get("pattern") ?? undefined, stems: xq.get("stems") === "1" });
   await new Promise(() => {});
 }
 

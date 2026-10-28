@@ -92,6 +92,15 @@ Field notes:
 
 - **channel**: `id` (unique), `name`, `generator`, `keymap`, `inputs`, `context` (`fresh` | `persistent` | `per-pattern`: how long the conversation lasts across notes), `output` (bus id, default `master`), `polyphony` (concurrent voices, default 4), `retries` (default 1), `onFail` (`stop` halts the run, `skip` records an error frame and continues), `mute` (`true`: its notes are skipped), `solo` (if any channel is soloed, only soloed channels play).
 - **clock**: `{bpm}` (default 120) is the studio's playback tempo: a speed limit, not a schedule (see `pace`). The grid is fixed at 16 steps per bar, 24 ticks per step.
+- **channel `mix`** (how the channel sounds in the mix; `mixer` is something else: it routes the agents' frames): `{"pan": -0.3, "eq": {"highpass": 120, "lowpass": 9000, "bands": [{"f": 350, "q": 1, "db": -3}]}, "comp": {"threshold": -18, "ratio": 3, "knee": 6, "attack": 0.01, "release": 0.15}, "reverb": 0.1, "delay": 0.15, "duck": 0.7, "duckBy": "drums"}`. Every field is optional, and a channel without `mix` sounds as before. The channel's notes go through EQ, then the compressor, then the duck. The sends are taken after the compressor. `channel_upsert` replaces the whole `mix`; to change one field, use `project_patch`.
+  - `pan` (-1…1) is added to each note's `pan` (clamped to -1…1).
+  - `eq`: `highpass` and `lowpass` in Hz (12 dB per octave), and up to 8 peaking `bands` (`f` in Hz, `q` default 1, `db` -24…24).
+  - `comp`: a compressor, with the defaults shown. Web Audio adds makeup gain (about +3.6 dB at -18 dB and ratio 3), so lower `gain` to compensate. The channel's notes start 6 ms early to make up for its lookahead.
+  - `reverb` (0–1) replaces the sound's own reverb send (for a kit, every piece's); 0 makes it dry. `delay` (0–1) sends to the song's delay; the default is none.
+  - `duck` (0–1) is how far the kick pushes the channel down: 0.72 for the pumped sounds, 0 for the rest; 1 is silence on the hit. `duckBy` names the drum channel whose kick (35/36) does it, and a `rock` kit works too. Without `duckBy`, the kick of any kit except `rock` ducks it.
+- **song `mix`**: `{"master": "limiter", "delay": {"time": 3, "feedback": 0.35}}`.
+  - `master`: `limiter` (default) catches peaks at about -1 dBTP and leaves the balance between parts and sections alone. `compressor` is the heavy master compressor that songs had before the limiter; it evens sections out. `none` has no master stage, so a loud song clips; use it to master elsewhere.
+  - `delay`: the shared delay that every channel's `mix.delay` feeds. `time` is in 16th steps (0.25–16; 3 is a dotted 8th) and follows the tempo. `feedback` is 0–0.95.
 - **input**: `bus`, `window` (`last` | `pass` | `run` | `{lastN: n}`), `select` (`final` | `all`), `as` (name in templates and `ctx.inputs`).
 - **pattern notes**: `steps: {"channelId": [1,0,0,0, ...]}` is a quick drum-style row (key 60, one step each). `notes: {"channelId": [{start, len, key, text, vel, when, pass, slide}]}` is the full form; `len` is in ticks (default 24). A key must exist in the channel's keymap.
 - **arrangement clip**: `{type: "pattern", ref, track, start, len?, loop?}`. `loop` here overrides the pattern's. Only pattern clips exist today.
@@ -108,7 +117,7 @@ Edit: `project_create`, `project_open`, `project_replace`, `project_patch`, `cha
 
 To write a whole song at once (for example from a generator script), send it with **`project_replace`**. Don't write the file and then `project_open` it. `project_replace` is one undoable edit that the user sees arrive, labeled as yours; reopening a file clears the undo history. Keep any generator script inside the song folder (for example `song.gen.mjs`), so the user can rerun and tweak it. Replacing the `init` starter song ("hello") is fine without asking.
 Run: `run_start`, `run_status`, `run_stop`, `voice_reply`.
-Audio (edit scope): `audio_export` renders the song or one pattern to `mp3` or `wav` in the project folder. Needs an open studio; about 0.3x the song's length in Chromium, slower in Firefox (progress is reported). `file` is a plain name, default is the song name; it refuses to overwrite unless `overwrite: true`. Without ffmpeg on PATH an MP3 request keeps the WAV and says so.
+Audio (edit scope): `audio_export` renders the song or one pattern to `mp3` or `wav` in the project folder. Needs an open studio; about 0.3x the song's length in Chromium, slower in Firefox (progress is reported). `file` is a plain name, default is the song name; it refuses to overwrite unless `overwrite: true`. Without ffmpeg on PATH an MP3 request keeps the WAV and says so. With `stems: true` it writes one WAV per channel that sounds instead (mute and solo apply), into a folder next to the song: `file` is the folder name (default `<song>-stems`), and each stem is `<nn>-<channel id>.wav`, where `nn` is the channel's place in the channel list. Every stem is the mix's length from the song's start. The stems are pre-master (no limiter), each has its own reverb and delay, and a pumped stem still ducks on the kick. Together they sum to the mix before the master stage. It takes one render per stem, in one browser. `overwrite: true` replaces the folder's old stems.
 
 The server lists only what its `--scope` allows. `agentloops init` registers it with `--scope run --budget 1`, so every run is capped at $1 unless the user raises `--budget` in `.mcp.json`. If `run_start` is missing, the server was started with a narrower scope (the bare default is `edit`, which cannot spend money). Either ask the user to add `"--scope", "run"` to the server `args` and restart, or run `node <path to agentloops>/src/cli.ts render song.alp.json` through a shell.
 
@@ -166,7 +175,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
 - **Pitch:** a note's `key` is its **MIDI pitch**. In FL naming, 60 is C5 and 69 is A5 (440 Hz). Every key a channel plays must be a row in its keymap, so name the rows after the pitches ("A4", "C5") and use template `{{note.text}}`.
 - **Length:** a note rings for its `len` at `clock.bpm`, or longer while its agent is still running. 24 ticks is a 16th step, 96 a beat, and 384 a bar.
 - **Chords:** stack notes at the same `start`. Raise the channel's `polyphony` (default 4) to at least the chord size.
-- **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). A note's `pan` (-1 left … 1 right, default 0) places it in the stereo field; the reverb stays centred. The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
+- **Instrument:** set the channel's `sound`, plus `gain` (0–1, default 1). A note's `pan` (-1 left … 1 right, default 0) places it in the stereo field, and the reverb stays centred. A channel's `mix.pan` is added to it. The default `auto` picks by generator: script is triangle, llm.agent is saw, harness is square.
   - **Sustained:** `triangle`, `sine`, `square`, `saw`; `supersaw` (5 detuned stereo saws, the future-bass chord, pumped by the kick); `sub` (the bass, pumped); `chip` (an 8-bit lead with vibrato); `epiano` (an FM Rhodes: a bright bite on the attack, tremolo, and a slow fade over a few seconds while held); `synorgan` (a synth of Hammond drawbars with a key click and a rotating-speaker wobble; it sustains at full level; the recorded `organ` sounds more like one).
     - `eguitar` (a clean electric guitar, keys 36–88): a plucked string with a light chorus. `vel` does nothing; a long note rings for its length and the top octave fades sooner.
     - `distguitar` (a distorted guitar, keys 36–88): the same string through an amp and cabinet, which keeps long notes ringing for their length. `vel` below 0.4 is a palm mute: a short, dark chug. Each channel has one amp, so a chord distorts as one sound, and the channel's `gain` is its volume after the distortion. Stack a power chord rather than a full triad.
@@ -205,7 +214,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - `shout` (gang shouts, any key): one shout per note, the word from its `text`: `hey` (the default), `ha`, `woo` or `yeah` (punctuation is ignored). It plays whole whatever the note's length, and the key doesn't change it: the same word on two channels or at two keys just gets louder. `vel` sets loudness.
     - `vibes` (a vibraphone, keys 48–87) rings, and the note's end damps it.
   - **`drums`, a GM kit:**
-    - 35/36 kick (it also ducks every pumped instrument: the sidechain pump)
+    - 35/36 kick (it also ducks every pumped instrument: the sidechain pump. A channel's `mix.duck` sets how far, and `mix.duckBy` sets which kick)
     - 37 side stick
     - 38/40 snare
     - 39 clap
@@ -215,7 +224,7 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
     - 49/57 crash, 52 china, 55 splash, 51/59 ride bow and 53 ride bell: sampled cymbals that ring out whole; `vel` below 0.4 is the soft hit
     - 54 tambourine, 56 cowbell, 70 maracas, 75 claves
     - anything else plays a rim click
-  - **`rock`, the same keys for rock:** a lower, punchier kick that does *not* duck the pump, and a snare with more body, a longer, brighter tail and more room. Everything else is shared with `drums`.
+  - **`rock`, the same keys for rock:** a lower, punchier kick that does *not* duck the pump (a channel can still follow it with `mix.duckBy`), and a snare with more body, a longer, brighter tail and more room. Everything else is shared with `drums`.
   - **`brushes`, the same keys for ballads:** a soft round kick (35/36, still ducks the pump), a brush slap on 38, and on 40 a brush swirl that swells in and lasts the note's length, so one note held for the bar sweeps it. Hats are a touch softer; the rest is shared with `drums`.
 - **Instruments are free agents:** a `script` returning `ctx.note.text` costs nothing and replays from cache. Route instrument channels to buses with `sends: []`, so only what you mean to deliver (lyrics, a summary) reaches Master.
 - **Patterns and clips:**
@@ -224,7 +233,13 @@ The studio sonifies the song, so it can be actual music. A note is a sound, and 
   - SONG plays the arrangement once; PAT loops the selected pattern.
 - **Listening:** the user hears the run, so **always `run_start` with `pace: "project"`**. Unpaced, every note fires at once.
 - **Words:** `chop` sings the syllables in its notes' `text`, and `shout` shouts its word. A "Lyricist" script with `inputs: [{bus: "vocal", window: "run", as: "vocal"}]` at the end of a section can join the last N syllables (`ctx.inputs.vocal.frames.slice(-n)`) into a lyric line for Master.
-- **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated.
+- **Export:** `audio_export` bounces the score to MP3 (or WAV) in the project folder, with the same instruments. It plays the score as written: mute and solo apply, but `when`/`pass` and loops are not evaluated. `stems: true` writes a WAV per channel instead.
+- **Mixing** (a channel's `mix`, see Project JSON): balance with `gain` first. Then:
+  - A `highpass` around 100–150 Hz on everything except the kick and the bass keeps the low end clear.
+  - `pan` spreads the parts; keep the kick, the bass and the lead in the centre.
+  - `reverb` places each part in the room: dry drums and bass, wet pads.
+  - A little `delay` on a lead or a chop (the song's `mix.delay.time` 3, a dotted 8th) fills the gaps between phrases.
+  - The master limiter only catches peaks, so a section is as loud as its parts: a drop without its bass comes out under the chorus. Check sections with `stems: true`, and mix further in a DAW or with ffmpeg if needed.
 
 ### Write the song before the arrangement
 
