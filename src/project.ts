@@ -241,6 +241,15 @@ export function validate(p: any): Err[] {
         const np = (...k: (string | number)[]) => at("notes", ch, j, ...k);
         if (pos(n.start) == null) err(np("start"), `Bad position ${JSON.stringify(n.start)}`, 'Use a tick count or "bar:step[:tick]" (1-based, 16 steps per bar, e.g. "2:09")');
         if (n.len != null && !(Number.isInteger(n.len) && n.len > 0)) err(np("len"), `Bad length ${JSON.stringify(n.len)}`, "Use a positive tick count (24 ticks per step)");
+        if (n.bend != null) { // pitch points [tick from the note's start, semitones from key]: ticks ascend within the note, a straight line between points
+          const len = n.len > 0 ? n.len : STEP, b = n.bend;
+          if (!Array.isArray(b) || !b.length || b.some((q: any) => !Array.isArray(q) || q.length !== 2 || typeof q[0] !== "number" || typeof q[1] !== "number")) err(np("bend"), `Bad bend ${JSON.stringify(b)}`, "Use a list of [tick, semitones] pairs, e.g. [[0,-2],[24,0]]");
+          else b.forEach(([k, st]: number[], i: number) => {
+            if (!Number.isInteger(k) || k < 0 || (i && k <= b[i - 1][0])) err(np("bend", i, 0), `Bad bend tick ${JSON.stringify(k)}`, "Use whole ticks from the note's start, 0 or more, each later than the one before");
+            else if (k > len) err(np("bend", i, 0), `Bend tick ${k} is past the note's length (${len})`, `Use a tick up to ${len}, or make the note longer`);
+            if (!(st >= -48 && st <= 48)) err(np("bend", i, 1), `Bend of ${JSON.stringify(st)} semitones is out of range`, "Use -48 to 48 semitones from the key");
+          });
+        }
         const key = n.key ?? 60;
         if (!hasKey(ch, key)) err(np("key"), `Key ${key} is not in the keymap of channel '${ch}'`, `Add an instruction with key ${key} to channel '${ch}' or use one of: ${(chById.get(ch).keymap ?? []).map((k: any) => k.key).join(", ")}`);
         if (n.when != null) expr(n.when, np("when"));

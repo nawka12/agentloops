@@ -238,7 +238,7 @@ From a song agent's feedback on AGENTS.md: its "Making music" section steered so
 - [x] `chop`: a formant vocal chop that sings the note's `text` (a i u e o, y, w, n, m)
 - [x] `growl`: a kawaii growl bass whose vowel moves across the note, from its `text` (default "wow"), pumped
 - [x] You listen in the studio (approved 2026-10-22)
-- Not built: a per-note pitch `glide` (needs automation; the manual lists it under "Not supported yet")
+- Not built here: a per-note pitch `glide`. Built in slice 17 as a note's `bend`
 
 As built: `text` now travels with the voice event and the export score, as a trailing argument of `make`, `sustain` and `note`. `chop` and `growl` share `formants()`: three bandpasses (F1, F2, F3 of a female voice) plus a level per letter, ramped from letter to letter; F1 stays above 1.1× the pitch so high chops keep their fundamental. `chop` moves a letter every 60 ms, `growl` spreads its letters over 85% of the note. Levels from the export test: `pizz` -1.2, `chop` -0.4, `growl` +2.4 dB against `triangle`. A test checks that "i" and "a" chops differ by more than 12 dB in harmonic 11 over harmonic 5 (measured 26.7). The VSCO C7 pizz reads as C6 in the octave check, so A6 is the top root.
 
@@ -281,6 +281,21 @@ The song's solos, re-tagged with YAMNet after this slice (own-class score; origi
 guitar still fall short of the original; the master compressor (slice I replaces it) also flattens their attacks.
 
 Not built: a separate pop articulation for `slap`, a "ho" shout (no clean CC0 one found), an engine strum (offset a chord's notes 1-2 ticks).
+
+### 17: pitch bends and supersaw motion (song-agent feedback, 2026-11-04)
+
+A song agent: "AgentLoops has no pitch bends, so the bass slides and riff scoops are missing. The supersaws also sound more static than the original's synths."
+
+- [x] A note's `bend: [[tick, semitones], ...]`: ticks from the note's start (whole, ascending, none past `len`), semitones from `key` (-48..48, fractions fine), a straight line between points, `key` before the first point, a hold after the last. Checked in `validate` with a path and a fix each
+- [x] The curve travels as `bend` on the voice event, the export score and `voiceStart`. Not in `noteCtx`/`notePar`: agents don't see it, so no prompt or cache key changes
+- [x] Sound: the curve is scheduled on each source's `detune` (`bendOn`, in `osc`, `string` and `sampled`), so every instrument bends, a unison or an FM pair as one. Oscillators under 20 Hz (the LFOs) stay unbent. Cymbals, `shout`, the `noise` buffer and the formants of `chop` and `growl` do not follow
+- [x] `supersaw`: two sine drifts (0.4 and 0.7 Hz) move the saws' detunes by ±6 cents (saws 0 and 3 with A, 1 and 4 against it, the middle one with B) and B moves the filter ±25% of 3.4 kHz; the LFO phase comes from absolute time (`drift`), so the motion runs on across notes; `scatter` starts each oscillator up to 6 ms late (seeded by the note, so a stem still sums to the mix)
+- [x] Manual: `bend` with the scoop, slide and slur, a craft tip, the supersaw line, and bends off the "Not supported yet" list
+- [x] Tests: `test/bend.test.ts` (the validator; a sine and a piano rise an octave along the curve; a `chip` on a constant bend keeps its centre pitch and its 6 Hz vibrato; a held supersaw's partial levels drift)
+
+As built: the old supersaw scored 0.23 dB on the test's drift measure (the level of each partial, smoothed over 1 s, std over time), the new one 3.1, measured before the LFO phases were shared. The song agent's `motion.py` cannot judge this: it removes everything slower than 2 s, and on a chord progression the old sound already scores wobble_db 7.06, level with the original's stem (6.5-7.3), so it mostly counts chord changes (a held chord went from 2.1 to 2.7). On one held chord in the original's stem (NCP bars 80-81, each partial's drift as above) the partials drift 3.6 dB; B4 and E5 of a held supersaw chord drifted 1.65 and now 3.72. The stem holds other material too, so that is a rough guide. LFO rates from 0.17/0.29 to 1.3/1.9 Hz, 6 to 12 cents and 25% to 50% on the filter were measured, not listened to; none passed wobble_db 3.04, so the slower settings stayed. A PeriodicWave holds about 630 KB (400 of them added 252 MB in Chromium), so a context's notes share 16 LFO phases: with one per note, NCP's 1809 supersaw notes could have held 2.3 GB. As built, NCP renders 262 s of audio in 55 s at a 1.4 GB peak. The filter swing opens more than it closes, so `peak` and `hold` are trimmed 10% to keep the chord within 0.2 dB of before. The test measures pitch by autocorrelation and zero crossings, and the drift by Goertzel.
+
+Not built: bends in `noise`'s band or the vowel filters, portamento from one note into the next, a bend on a cymbal or `shout`.
 
 ### F (optional): demo songs
 
@@ -333,4 +348,4 @@ Answered 2026-10-20 (4 just before slice D started).
 - **Per-channel synth knobs** (attack, release, cutoff), like FL's channel settings.
 - **A swing setting** in the engine: written swing (ticks 0 / 64) covers it for now.
 - **Loading SoundFonts or SFZ files**, or using your own samples.
-- **Pitch bends and slides** (guitar bends, string portamento): the format has no bend, and a note's `slide` means something else (it continues the previous voice's conversation).
+- **Pitch bends on one note are built (slice 17, a note's `bend`).** Still out: portamento from one note into the next.

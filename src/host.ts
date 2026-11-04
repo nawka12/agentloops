@@ -248,7 +248,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
       },
     },
     upsertTool("channel", "A channel is {id, name, generator:{plugin, params}, keymap:[{key,name,template,schema?}], inputs:[{bus,window,select,as}], context, output, polyphony, retries, onFail}."),
-    upsertTool("pattern", "A pattern is {id, name, lengthSteps, loop?:{max, until?}, steps?:{channel:[0|1,..]}, notes?:{channel:[{start,len,key,when?,pass?,slide?}]}}."),
+    upsertTool("pattern", "A pattern is {id, name, lengthSteps, loop?:{max, until?}, steps?:{channel:[0|1,..]}, notes?:{channel:[{start,len,key,bend?,when?,pass?,slide?}]}}."),
     upsertTool("bus", 'A bus is {id, name, slots:[{plugin, params}], sends:[{to, mode: all|final|sidechain}], join}. id "master" configures the implicit Master bus.'),
     upsertTool("arrangement", "An arrangement is {id, name, tracks:[{name}], clips:[{type:'pattern', ref, track, start, len?, loop?}]}."),
     {
