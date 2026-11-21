@@ -93,6 +93,8 @@ test("stems via a connected tab: each upload lands as <nn>-<id>.wav, overwrite c
   try {
     const r = await m.call("audio_export", { stems: true, file: "parts" });
     assert.deepEqual([r.folder, r.renderedBy, r.seconds], [join(dir, "parts"), "tab", 1]);
+    assert.ok(r.sections.length >= 1 && r.sections.every((x: any) => typeof x.from === "string" && Array.isArray(x.patterns)), JSON.stringify(r.sections));
+    for (const st of r.stems) assert.ok((st.lufs === null || typeof st.lufs === "number") && st.sections.length === r.sections.length, JSON.stringify(st)); // per-section lufs, in section order
     assert.deepEqual(readdirSync(r.folder).sort(), ["01-a.wav", "02-b-2.wav"]);
     writeFileSync(join(r.folder, "03-gone.wav"), "old stem"); writeFileSync(join(r.folder, "notes.txt"), "mine");
     await m.call("audio_export", { stems: true, file: "parts", overwrite: true });

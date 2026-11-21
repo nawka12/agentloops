@@ -95,6 +95,14 @@ test("audio_export via a connected tab: the relayed MCP call returns the file", 
     assert.equal(r.format, ext);
     assert.equal(r.renderedBy, "tab");
     assert.equal(r.seconds, 1.5);
+    // loudness: the fake tab sends silence, so numbers are null; the shape is what matters. Sections are the fixture's first arrangement (4-bar clips, 41:01 and 45:01 overlap)
+    assert.ok(r.lufs === null || typeof r.lufs === "number", JSON.stringify(r));
+    assert.ok(r.peakDb === null || typeof r.peakDb === "number", JSON.stringify(r));
+    assert.deepEqual(r.sections.map((x: any) => [x.from, x.to, x.patterns]), [
+      ["1:01", "5:01", ["intro"]], ["5:01", "9:01", ["verse"]], ["9:01", "13:01", ["verse"]], ["13:01", "17:01", ["build"]], ["17:01", "21:01", ["chorus"]], ["21:01", "25:01", ["chorus"]],
+      ["25:01", "29:01", ["break"]], ["29:01", "33:01", ["verse"]], ["33:01", "37:01", ["verse"]], ["37:01", "41:01", ["build"]], ["41:01", "45:01", ["chorus", "sparkle"]], ["45:01", "49:01", ["chorus", "sparkle"]], ["49:01", "53:01", ["outro"]],
+    ]);
+    assert.ok(r.sections.every((x: any) => (x.lufs === null || typeof x.lufs === "number") && (x.peakDb === null || typeof x.peakDb === "number")), JSON.stringify(r.sections));
     assert.ok(existsSync(r.file) && r.bytes > 1000, JSON.stringify(r));
     if (ffmpeg) { // tags, and the temporary WAV is gone
       assert.match(readFileSync(r.file).toString("latin1"), /AgentLoops/);

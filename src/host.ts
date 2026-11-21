@@ -6,8 +6,9 @@ import { randomUUID } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 import { score } from "./cli.ts";
 import { saveAudio, wavSeconds, which } from "./export.ts";
+import { measure, type Span } from "./loudness.ts";
 import { checkSchema } from "./mixer.ts";
-import { loadProject, starter, validate, type Err } from "./project.ts";
+import { BAR, STEP, compile, loadProject, starter, validate, type Err } from "./project.ts";
 import { appendEvent, loggedRender, refresh, writeJson } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
@@ -88,6 +89,19 @@ const PANELS = ["playlist", "rack", "pianoroll", "mixer", "tracer", "monitor"];
 const NO_STUDIO = "no studio open: run `agentloops studio <file>` to see it";
 const NO_EXPORT = "open the studio (`agentloops studio <file>`) to export audio: it renders the sound in a browser";
 const EXPORT_FILE = /^[\w.-]+\.(mp3|wav)$/, STEM_DIR = /^\w[\w.-]*$/, STEM = /^\d\d+-.*\.wav$/; // a stem is <nn>-<channel id>.wav, nn its place in the channel list
+/** ticks as "bar:step" or "bar:step:tick" (the reverse of pos()) */
+const tickPos = (t: number) => { const r = t % BAR, s = `${Math.floor(t / BAR) + 1}:${String(Math.floor(r / STEP) + 1).padStart(2, "0")}`; return r % STEP ? `${s}:${r % STEP}` : s; };
+/** The render's sections: every clip edge cuts the timeline; each piece that some clip covers is one section, with its span in seconds at the song's tempo */
+function sectionsOf(p: any, o: { arrangement?: string; pattern?: string }) {
+  const clips: { patternId: string; start: number; len: number }[] = compile(p, o).clips;
+  const cuts = [...new Set(clips.flatMap((c) => [c.start, c.start + c.len]))].sort((x, y) => x - y), sec = (t: number) => t * 60 / (p.clock?.bpm ?? 120) / 96;
+  const out: { from: string; to: string; patterns: string[]; span: Span }[] = [];
+  for (let i = 0; i + 1 < cuts.length; i++) {
+    const [a, b] = [cuts[i], cuts[i + 1]], covering = clips.filter((c) => c.start <= a && c.start + c.len >= b);
+    if (covering.length) out.push({ from: tickPos(a), to: tickPos(b), patterns: [...new Set(covering.map((c) => c.patternId))], span: [sec(a), sec(b)] });
+  }
+  return out;
+}
 const clip = (s: any, n = 200) => { s = typeof s === "string" ? s : JSON.stringify(s); return s == null ? s : s.length > n ? s.slice(0, n) + "…" : s; };
 // validate() is not shape-hardened; a crash on a half-built project is reported as one error instead of rejecting the edit
 export const check = (p: any): Err[] => { try { return validate(p); } catch (e: any) { return [{ path: "/", message: `project cannot be validated: ${e.message}`, fix: "Check the types of the fields you just edited (arrays vs objects vs strings)" }]; } };
@@ -264,7 +278,7 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
     // export (renders in the studio's browser)
     {
       name: "audio_export", scope: "edit",
-      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). About 0.3x the song's length (slower if a Firefox tab renders it), progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless}. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated). stems:true instead writes one WAV per channel that sounds (mute/solo apply) into a folder (file: a plain folder name, default <song>-stems), named <nn>-<channel id>.wav (nn: its place in the channel list), all the length of the mix from the song's start: pre-master (no limiter), each with its own reverb and delay, ducked by the kick like in the mix; they sum to the mix before the master stage. One render per stem, in one browser. overwrite:true replaces the folder's old stems. Returns {folder, stems: [{channel, file}], seconds, renderedBy}.",
+      description: "Render the song (default: the first arrangement) or one pattern to an audio file in the project's folder, with the studio's instruments. Needs an open studio (a browser renders it: a connected tab, else headless Chromium). About 0.3x the song's length (slower if a Firefox tab renders it), progress is reported. file: a plain name like song.mp3 (no path; default: the song name + .mp3). format mp3 (needs ffmpeg on PATH, else you get the WAV and a note) or wav. Refuses to overwrite unless overwrite:true. Returns {file (absolute), format, seconds, bytes, renderedBy: tab|headless, lufs (integrated loudness), peakDb (sample peak, dBFS), sections: [{from, to, patterns, lufs, peakDb}]}: a quiet drop shows as a lower lufs than the chorus, and the drop should usually be the loudest section. Plays the score as written (mute/solo apply; when/pass conditions are not evaluated). stems:true instead writes one WAV per channel that sounds (mute/solo apply) into a folder (file: a plain folder name, default <song>-stems), named <nn>-<channel id>.wav (nn: its place in the channel list), all the length of the mix from the song's start: pre-master (no limiter), each with its own reverb and delay, ducked by the kick like in the mix; they sum to the mix before the master stage. One render per stem, in one browser. overwrite:true replaces the folder's old stems. Returns {folder, stems: [{channel, file, lufs, sections: [lufs per section]}], sections: [{from, to, patterns}], seconds, renderedBy}: each stem's lufs and per-section lufs show which part is missing or too quiet.",
       inputSchema: obj({ file: S, format: S, arrangement: S, pattern: S, overwrite: B, stems: B }),
       run: async (a: any, c: Ctx) => {
         if (!h.render) throw new Error(NO_EXPORT);
@@ -274,18 +288,20 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
         if (a.stems === true) { // one WAV per channel, written as each lands
           if (a.format != null && a.format !== "wav") throw new Error('stems are WAV only: leave out format or pass "wav"');
           if (a.file != null && !STEM_DIR.test(a.file)) throw new Error("file must be a plain folder name like song-stems (letters, digits, _ . -; no slashes)");
-          const name = a.file ?? `${slug}${pat}-stems`, out = join(dir, name), idx = new Map<string, number>((s.p.channels ?? []).map((x: any, i: number) => [x.id, i])), stems: { channel: string; file: string }[] = [];
+          const name = a.file ?? `${slug}${pat}-stems`, out = join(dir, name), idx = new Map<string, number>((s.p.channels ?? []).map((x: any, i: number) => [x.id, i])), stems: { channel: string; file: string; lufs: number | null; sections: (number | null)[] }[] = [];
           if (existsSync(out) && a.overwrite !== true) throw new Error(`${out} already exists: pass overwrite:true or another file name`);
           let seconds = 0; c.summary = `${name}/`;
+          const secs = sectionsOf(s.p, { arrangement: a.arrangement, pattern: a.pattern }), spans = secs.map((x) => x.span);
           const { wav: mixed, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern, stems: true }, c, (ch, wav) => {
             if (!idx.has(ch) || stems.some((x) => x.channel === ch)) throw new Error(`unexpected stem '${ch}'`);
             if (!stems.length) { mkdirSync(out, { recursive: true }); for (const f of readdirSync(out)) if (STEM.test(f)) rmSync(join(out, f)); } // only once the render works: the old stems go, other files stay
             const file = join(out, `${String(idx.get(ch)! + 1).padStart(2, "0")}-${ch.replace(/[^\w.-]+/g, "-")}.wav`);
-            writeFileSync(file, wav); stems.push({ channel: ch, file }); seconds = wavSeconds(wav); c.progress(`stem ${stems.length}: ${ch}`);
+            const l = measure(wav, spans);
+            writeFileSync(file, wav); stems.push({ channel: ch, file, lufs: l.lufs, sections: l.spans.map((x) => x.lufs) }); seconds = wavSeconds(wav); c.progress(`stem ${stems.length}: ${ch}`);
           });
           if (mixed) throw new Error("the studio tab rendered the mix, not stems: it runs an older AgentLoops, so reload it and retry");
           if (!stems.length) throw new Error("no channel sounds in this range (all muted, or no notes)");
-          return { folder: out, stems, seconds: Math.round(seconds * 100) / 100, renderedBy: by };
+          return { folder: out, stems, sections: secs.map(({ span, ...x }) => x), seconds: Math.round(seconds * 100) / 100, renderedBy: by };
         }
         if (a.file != null && !EXPORT_FILE.test(a.file)) throw new Error("file must be a plain name like song.mp3 or song.wav (letters, digits, _ . -; no folders)");
         if (a.format != null && !["mp3", "wav"].includes(a.format)) throw new Error('format must be "mp3" or "wav"');
@@ -295,9 +311,12 @@ export function createHost(o: { file?: string; scope: keyof typeof RANK; budget?
         const ffmpeg = format === "mp3" ? which("ffmpeg") : null, wavOut = format === "wav" || !ffmpeg ? out.replace(/\.mp3$/, ".wav") : out; // no ffmpeg: the WAV is what we keep
         if (existsSync(wavOut) && a.overwrite !== true) throw new Error(`${wavOut} already exists: pass overwrite:true or another file name`);
         c.summary = name;
+        const secs = sectionsOf(s.p, { arrangement: a.arrangement, pattern: a.pattern });
         const { wav: w, by } = await h.render({ arrangement: a.arrangement, pattern: a.pattern }, c), wav = w!;
         const r = await saveAudio(wav, { out, wavOut, format, ffmpeg, title: String(s.p.name ?? slug), overwrite: a.overwrite === true, signal: c.signal });
-        return { ...r, seconds: Math.round(wavSeconds(wav) * 100) / 100, renderedBy: by };
+        const l = measure(wav, secs.map((x) => x.span));
+        return { ...r, seconds: Math.round(wavSeconds(wav) * 100) / 100, renderedBy: by, lufs: l.lufs, peakDb: l.peakDb,
+          sections: secs.map(({ span, ...x }, i) => ({ ...x, lufs: l.spans[i].lufs, peakDb: l.spans[i].peakDb })) };
       },
     },
     // run
