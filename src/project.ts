@@ -53,7 +53,7 @@ export function badSamplePath(f: any) {
   if (f.split("/").some((x) => x === "" || x === "." || x === "..")) return 'must stay inside the song\'s folder (no "..", ".", or empty parts)';
   if (!(f.slice(f.lastIndexOf(".")).toLowerCase() in AUDIO_TYPES)) return `must end in ${Object.keys(AUDIO_TYPES).join(", ")}`;
 }
-const KITS = ["drums", "brushes", "rock"], MASTERS = ["limiter", "compressor", "none"]; // the drum kits (their kick ducks), and the song's master stages (ui/sound.ts master())
+const KITS = ["drums", "brushes", "rock", "edm"], MASTERS = ["limiter", "compressor", "none"]; // the drum kits (their kick ducks), and the song's master stages (ui/sound.ts master())
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
 

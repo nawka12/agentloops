@@ -68,6 +68,7 @@ test("validator: bad mix values get a path, a message and a fix", () => {
   const ok = song({ channels: [ch("d", "drums", [36]), ch("s", "sub", [36], { mix: { pan: -0.3, eq: { highpass: 120, lowpass: 9000, bands: [{ f: 350, q: 1, db: -3 }] }, comp: { threshold: -18, ratio: 3, attack: 0.01, release: 0.15 }, reverb: 0.1, delay: 0.15, duck: 0.5, duckBy: "d" } })],
     patterns: [{ id: "p", notes: {} }], mix: { master: "compressor", delay: { time: 3, feedback: 0.35 } } });
   assert.deepEqual(validate(ok), []);
+  assert.deepEqual(validate({ ...ok, channels: [ch("d", "edm", [36]), ok.channels[1]] }), []); // the edm kick ducks too
   assert.deepEqual(validate({ ...ok, mix: "x" }).map((e) => e.path), ["/mix"]);
 });
 
