@@ -149,7 +149,7 @@ function applyEvent(e: any, live: boolean) {
     const id = `${e.runId}:${e.voice}`;
     if (e.type === "voice" && e.phase === "start" && audible(e.channel)) {
       const c = (S.project?.channels ?? []).find((x: any) => x.id === e.channel); // the note rings for its length at tempo, longer while the agent runs
-      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, text: e.text, bend: e.bend, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm(), mix: c?.mix }, e.at);
+      voiceStart(id, e.key, plugin(e.channel), { sound: c?.sound, gain: c?.gain, vel: e.vel, pan: e.pan, text: e.text, bend: e.bend, ch: e.channel, dur: ((e.len ?? 0) * 60) / bpm() / 96, bpm: bpm(), mix: c?.mix, samples: S.sampleUrls?.[e.channel] }, e.at);
     }
     if (e.type === "voice" && e.phase === "end") voiceEnd(id, e.status === "failed" && audible(e.channel), e.at);
     if (e.type === "frame" && e.kind === "error") blip();
@@ -210,8 +210,8 @@ function tryFlash() {
 export const fl = (id: string) => (S.flash.has(id) ? " flash" : "");
 function setState(st: any, live: boolean) {
   const ids = live ? diff(S.project, st.project) : new Set<string>();
-  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null });
-  preload(st.project); // the sample files the song plays start downloading when it opens or changes
+  Object.assign(S, { project: st.project, errors: st.errors, takes: st.takes, latest: st.latest, file: st.file, serverPlaying: st.running, loop: st.loop ?? null, sampleUrls: st.sampleUrls });
+  preload(st.project, st.sampleUrls); // the sample files the song plays start downloading when it opens or changes
   songMix(st.project?.mix);
   if (S.bpm != null && S.bpm === st.project?.clock?.bpm) S.bpm = null; // the tempo edit landed
   if (S.pattern && !curPattern()?.id) S.pattern = null;

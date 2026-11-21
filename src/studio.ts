@@ -1,8 +1,8 @@
 // `agentloops studio`: local web UI for watching an outside harness build and run a song.
 // Deviation from SPEC §13: Server-Sent Events (server -> browser) plus fetch POSTs (browser -> server) instead of a WebSocket.
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
-import { basename, dirname, resolve, sep } from "node:path";
+import { closeSync, constants, copyFileSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, readSync, realpathSync, rmSync, statSync, watch, writeFileSync } from "node:fs";
+import { basename, dirname, extname, resolve, sep } from "node:path";
 import { createRequire, stripTypeScriptTypes } from "node:module";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { randomBytes, timingSafeEqual } from "node:crypto";
@@ -10,7 +10,7 @@ import { score } from "./cli.ts";
 import { harnessFiles, HARNESSES } from "./connect.ts";
 import { exporter, MAX_WAV, wavSeconds } from "./export.ts";
 import { applyPatch, check, createHost, PLUGINS, RANK } from "./host.ts";
-import { compile, starter } from "./project.ts";
+import { AUDIO_TYPES, badSamplePath, compile, starter } from "./project.ts";
 import { appendEvent, eventsFile, refresh, studioFile, writeJson } from "./sync.ts";
 import { openTakes } from "./takes.ts";
 
@@ -40,6 +40,17 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
   // audio_export: the newest connected tab renders the WAV, else headless Chromium; the bytes come back through POST /api/export/:id
   const ex = exporter({ last: () => [...clients].at(-1) ?? null, send: (c: ServerResponse, t, d) => void c.write(sse(t, d)), url: () => host.studioUrl! });
   host.render = ex.render;
+  /** an audio file of the song's folder (`rel` as a `sample` channel writes it) that the studio may serve: real path inside the folder, symlinks resolved, one of the audio types; else undefined */
+  const songFile = (rel: string) => {
+    if (badSamplePath(rel)) return;
+    try { const f = realpathSync(resolve(dir, rel)); if (f.startsWith(realpathSync(dir) + sep) && extname(f).toLowerCase() in AUDIO_TYPES && statSync(f).isFile()) return f; } catch {}
+  };
+  // Each `sample` channel's files as URLs of GET /api/file/<path>, versioned by the file's mtime and size (`?v=`): a file rewritten in place gets a new URL, so the browser's decode cache (keyed by URL) never plays
+  // a stale one. A missing file gets `?v=missing`, which 404s, so the export fails naming it. Sent with every state and in the score; live play picks a rewrite up at the next project change (ponytail: no file watcher)
+  const sampleUrls = (p: any) => Object.fromEntries((p.channels ?? []).filter((c: any) => c.sound === "sample" && c.samples && typeof c.samples === "object").map((c: any) => [c.id, Object.fromEntries(Object.entries<any>(c.samples).map(([k, f]) => {
+    const real = songFile(f), st = real && statSync(real);
+    return [k, `/api/file/${String(f).split("/").map(encodeURIComponent).join("/")}?v=${st ? `${st.mtimeMs}-${st.size}` : "missing"}`];
+  }))]));
   const withTakes = <T>(fn: (t: ReturnType<typeof openTakes>) => T): T => { const t = openTakes(dir); try { return fn(t); } finally { t.close(); } };
 
   const readEvents = (from: number) => {
@@ -57,7 +68,7 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
     // ponytail: the latest take's frames (capped at 500) ride along with every state push; page them if takes get big
     const { takes, latest } = withTakes((t) => { const takes = t.list(10) as any[], g = takes[0] && t.get(takes[0].id); return { takes, latest: g && { ...g, frames: t.frames(takes[0].id).slice(-500) } }; });
     let sc = ""; try { sc = score(s.p); } catch (e: any) { sc = `cannot draw the score yet: ${e.message}`; }
-    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: playing(), loop: loopInfo };
+    return { file: basename(s.file), project: s.p, errors: check(s.p), score: sc, takes, latest, running: playing(), loop: loopInfo, sampleUrls: sampleUrls(s.p) };
   };
   const playing = () => !!loop || [...host.runs.values()].some((r) => r.status === "running");
   // PAT Play loops until Stop, like FL: each repeat is a fresh paced run of the *current* project (edits land on the next repeat), cached voices replay free.
@@ -129,11 +140,11 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
     // are not evaluated (the score plays once, as notated). ponytail: evaluate conditions by bouncing a take when songs need it
     "GET /api/score": (req, res) => {
       const q = new URL(req.url ?? "/", "http://x").searchParams, p = host.st!.p, chs: any[] = p.channels ?? [], solo = chs.some((c) => c.solo);
-      const plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
+      const urls = sampleUrls(p), plan = compile(p, { pattern: q.get("pattern") || undefined, arrangement: q.get("arrangement") || undefined });
       const on = new Set(chs.filter((c) => !c.mute && (!solo || c.solo)).map((c) => c.id));
       const notes = plan.clips.flatMap((c: any) => c.notes).filter((n: any) => on.has(n.ch)).map((n: any) => ({ ch: n.ch, key: n.key, start: n.start, len: n.len, vel: n.vel, pan: n.pan, text: n.text, bend: n.bend }));
       json(res, 200, { name: p.name, bpm: p.clock?.bpm ?? 120, end: Math.max(0, ...plan.clips.map((c: any) => c.start + c.len)), notes, mix: p.mix,
-        channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain, mix: c.mix })) });
+        channels: chs.map((c) => ({ id: c.id, plugin: c.generator?.plugin, sound: c.sound, gain: c.gain, mix: c.mix, samples: urls[c.id] })) });
     },
     // the browser's half of audio_export: ack = "I am rendering it" (no ack in 10 s and the host goes headless); the upload is the WAV, or JSON {error}
     "POST /api/export/(\\w+)/ack": async (_q, res, m) => { const j = ex.jobs.get(m[1]); if (!j) return json(res, 404, { error: "unknown or expired export" }); j.acked(); json(res, 200, { ok: true }); },
@@ -250,6 +261,12 @@ export async function studio(o: { file: string; port?: number; onClosed?: () => 
     "GET /ui/samples/([\\w-]+)/([\\w-]+)\\.mp3": (_q, res, m) => {
       let b: Buffer; try { b = readFileSync(new URL(`samples/${m[1]}/${m[2]}.mp3`, UI)); } catch { return json(res, 404, { error: "not found" }); }
       res.writeHead(200, { "content-type": "audio/mpeg", "cache-control": "no-store" }); res.end(b);
+    },
+    // a `sample` channel's file from the song's folder (see songFile): audio types only, 404 for anything else or outside it
+    "GET /api/file/(.+)": (_q, res, m) => {
+      let f: string | undefined; try { f = songFile(decodeURIComponent(m[1])); } catch {}
+      if (!f) return json(res, 404, { error: "not found" });
+      res.writeHead(200, { "content-type": AUDIO_TYPES[extname(f).toLowerCase()], "cache-control": "no-store" }); res.end(readFileSync(f));
     },
     "GET /icon.svg": (_q, res) => { res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-store" }); res.end(readFileSync(new URL("icon.svg", UI))); },
     "GET /(ui/[\\w-]+\\.(?:ts|css))?": (_q, res, m) => {

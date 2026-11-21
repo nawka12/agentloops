@@ -8,9 +8,9 @@ export const sound = { on: load("on", true) as boolean, vol: load("vol", 0.6) as
 const stats = { started: 0, stopped: 0, active: 0, chimes: 0, blips: 0, clicks: 0, events: 0, kicks: 0 };
 (window as any).__sound = stats;
 const MAX = 24; // ponytail: at most 24 sustained live tones; later voices are silent until one ends. Steal the oldest if big chords matter
-export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute", "whistle", "chop"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "pizz", "harp"], keys: ["piano", "epiano", "organ", "synorgan", "accordion"], bass: ["sub", "upright", "finger", "slap", "ebass", "reese", "acid", "wobble", "808", "growl"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], voice: ["choir", "ooh", "shout"], pad: ["supersaw", "pad", "synchoir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock", "edm"], fx: ["noise"] };
+export const FAMILIES: Record<string, string[]> = { lead: ["triangle", "sine", "square", "saw", "chip", "brass", "flute", "whistle", "chop"], horns: ["sax", "trumpet", "trombone"], strings: ["strings", "violin", "pizz", "harp"], keys: ["piano", "epiano", "organ", "synorgan", "accordion"], bass: ["sub", "upright", "finger", "slap", "ebass", "reese", "acid", "wobble", "808", "growl"], guitar: ["eguitar", "distguitar", "guitar", "heavy", "crunch", "chug", "clean"], voice: ["choir", "ooh", "shout"], pad: ["supersaw", "pad", "synchoir"], mallets: ["pluck", "bell", "marimba", "vibes", "glock", "timpani"], drums: ["drums", "brushes", "rock", "edm"], fx: ["noise", "sample"] };
 export const SOUNDS = Object.values(FAMILIES).flat();
-const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock", "edm", "shout"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
+const ONESHOT = new Set(["pluck", "bell", "marimba", "drums", "brushes", "rock", "edm", "shout", "sample"]); // a sound in neither this nor SAMPLED is sustained (see SUSTAIN)
 const span = (a: number, b: number) => Array.from({ length: (b - a) / 3 + 1 }, (_, i) => a + 3 * i); // a recorded note every minor third
 // Sampled sounds: files ui/samples/<sound>/<root>.mp3 (mf) and <root>-p.mp3 (soft; `soft: false` = mf only). The recording carries its own decay, so the envelope only
 // holds it and releases at the note's end. A held sound has a `loop` [start, end] (s, the same for all its files; keep in sync with scripts/samples.mjs): each file ends at the
@@ -404,12 +404,13 @@ function sustain(r: Rig, kind: string, key: number, t: number, lvl: number, vel:
   return { g, oscs, rel: s.rel, hold: [h, Math.max(0.0001, s.hold * lvl)] as [number, number] };
 }
 // Sample buffers, cached per sample rate (not per context): a decoded AudioBuffer plays in any context of that rate. A failed download stays missing until reload (ponytail: no retry).
+// A file id is a bundled sample's name (`piano/60`), or a URL (starts with `/`) of a song-folder file: a `sample` channel's, whose `?v=` changes when the file does (see sampleUrls in src/studio.ts), so a rewritten file is a new entry.
 const bank = new Map<number, Map<string, { b?: AudioBuffer; p?: Promise<void> }>>();
 const sampleName = (kind: string, root: number, soft: boolean) => `${kind}/${root}${soft ? "-p" : ""}`;
 /** the entry for file f at c's rate: starts the download + decode if nobody has (also the safety net for a note whose file wasn't preloaded: silent once, then it plays) */
 function fetchSample(c: BaseAudioContext, f: string) {
   let m = bank.get(c.sampleRate); if (!m) bank.set(c.sampleRate, (m = new Map()));
-  if (!m.has(f)) { const e: { b?: AudioBuffer; p?: Promise<void> } = {}; m.set(f, e); e.p = fetch(`/ui/samples/${f}.mp3`, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then((a) => c.decodeAudioData(a)).then((b) => { e.b = b; }).catch(() => {}); }
+  if (!m.has(f)) { const e: { b?: AudioBuffer; p?: Promise<void> } = {}; m.set(f, e); e.p = fetch(f.startsWith("/") ? f : `/ui/samples/${f}.mp3`, { cache: "no-store" }).then((r) => r.ok ? r.arrayBuffer() : Promise.reject(r.status)).then((a) => c.decodeAudioData(a)).then((b) => { e.b = b; }).catch(() => {}); }
   return m.get(f)!;
 }
 /** load these files on c; resolves to the ones that failed */
@@ -424,10 +425,14 @@ function nearest(s: (typeof SAMPLED)[string], key: number) {
   while (key < lo - 3) key += 12; while (key > hi + 3) key -= 12; // the edge roots may pitch 3 semitones outward (piano 106-108); beyond that, fold by octaves into the range
   return [key, s.roots.reduce((a, b) => (Math.abs(b - key) < Math.abs(a - key) ? b : a))] as const;
 }
+/** a `sample` channel's files, MIDI key -> URL (the channel's `samples`, resolved by the studio); the nearest mapped key's [key, URL] for a note, undefined if none are mapped (a tie goes to the lower key) */
+type Samples = Record<string, string>;
+const mapped = (m: Samples | undefined, key: number) => Object.entries(m ?? {}).map(([k, u]) => [+k, u] as const).sort((a, b) => Math.abs(a[0] - key) - Math.abs(b[0] - key) || a[0] - b[0])[0];
 /** the one place that decides which sample file a note plays (playing and preloading both ask): a sampled sound's nearest root (its `dead` sound's under vel 0.4),
- *  a kit's cymbal, or a shout's word (from the note's text, default "hey"); soft (-p) under vel 0.4. undefined: no file */
-function fileOf(kind: string, key: number, vel: number, text?: string): string | undefined {
+ *  a kit's cymbal, or a shout's word (from the note's text, default "hey"), a `sample` channel's nearest mapped file; soft (-p) under vel 0.4. undefined: no file */
+function fileOf(kind: string, key: number, vel: number, text?: string, samples?: Samples): string | undefined {
   const s = SAMPLED[kind], soft = vel < 0.4;
+  if (kind === "sample") return mapped(samples, key)?.[1];
   if (s) return s.dead && soft ? sampleName(s.dead, nearest(s, key)[1], false) : sampleName(kind, nearest(s, key)[1], soft && s.soft !== false);
   if (kind === "shout") { const w = (text ?? "").toLowerCase().replace(/[^a-z]/g, ""); return `shout/${WORDS.includes(w) ? w : "hey"}`; }
   const f = KITS.includes(kind) ? CYMBAL[key] : undefined;
@@ -435,9 +440,9 @@ function fileOf(kind: string, key: number, vel: number, text?: string): string |
 }
 let want = new Set<string>();
 /** Live: the project's sample files, from every note of every pattern (a step note is key 60, an unset vel 0.5). Loads now, or once Play unlocks the audio. */
-export function preload(p: any) {
+export function preload(p: any, urls: Record<string, Samples> = {}) {
   const kind = new Map<string, string>((p?.channels ?? []).map((c: any) => [c.id, kindOf(c.generator?.plugin ?? "script", c.sound)])), fs = new Set<string>();
-  const add = (ch: string, key = 60, vel = 0.5, text?: string) => { const f = fileOf(kind.get(ch) ?? "", key, vel, text); if (f) fs.add(f); };
+  const add = (ch: string, key = 60, vel = 0.5, text?: string) => { const f = fileOf(kind.get(ch) ?? "", key, vel, text, urls[ch]); if (f) fs.add(f); };
   for (const pat of p?.patterns ?? []) {
     for (const [ch, steps] of Object.entries<any>(pat.steps ?? {})) if (steps.some(Boolean)) add(ch);
     for (const [ch, ns] of Object.entries<any>(pat.notes ?? {})) for (const n of ns) add(ch, n.key, n.vel, n.text);
@@ -477,7 +482,7 @@ const release = (v: Voice, now: number, at: number) => {
 };
 /** play one note of any instrument at time t on rig r; sustained and sampled kinds (and the brushes swirl) are returned for release, one-shots handle themselves. vel only matters to sampled ones, the ride and `guitar`; `dur` (the note's seconds, 0 if unknown) only to `noise`, `growl` and a `choke`; `bpm` only to `wobble`, `text` only to `chop`, `growl` and `shout` */
 /** `mix`: the channel's mix settings (into its chain; its pan adds to the note's, clamped) */
-function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120, text?: string, mix?: any, bend?: [number, number][]) {
+function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0.5, p = 0, ch = "", dur = 0, bpm = 120, text?: string, mix?: any, bend?: [number, number][], samples?: Samples) {
   if (bend) r = { ...r, bend: bend.map(([k, s]) => [t + (k * 60) / bpm / 96, s * 100]) };
   tempo(r.root, bpm);
   const x = mix ? chainOf(r.root, ch, kind, mix) : undefined;
@@ -489,13 +494,14 @@ function note(r: Rig, kind: string, key: number, t: number, lvl: number, vel = 0
   if (p) { const o = pan(r, p), q = pan(r, p); o.connect(r.out); q.connect(r.pump); r = { ...r, out: o, pump: q }; } // a panned note plays into its own panners (the reverb send stays centred; `duck` stays the real pump)
   if (KITS.includes(kind)) return drum(r, key, t, lvl, vel, kind, ch);
   if (kind === "shout") { shout(r, fileOf(kind, key, vel, text)!, t, lvl, vel); return null; }
+  if (kind === "sample") { sampleNote(r, samples, key, t, lvl, vel); return null; }
   if (ONESHOT.has(kind)) { (kind === "pluck" ? pluck : kind === "marimba" ? marimba : bell)(r, hz(key), t, lvl); return null; }
   if (SAMPLED[kind]) return sampled(r, kind, key, t, lvl, vel, p, dur);
   return sustain(r, kind, key, t, lvl, vel, p, dur, bpm, text);
 }
 
 const tones = new Map<string, Voice & { until: number }>();
-export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number; text?: string; bend?: [number, number][]; mix?: any }; // mix: the channel's; bend: pitch points [tick, semitones]
+export type VoiceSound = { sound?: string; gain?: number; dur?: number; vel?: number; pan?: number; ch?: string; bpm?: number; text?: string; bend?: [number, number][]; mix?: any; samples?: Samples }; // mix, samples: the channel's; bend: pitch points [tick, semitones]
 const kindOf = (plugin: string, s?: string) => (s && s !== "auto" ? s : BY_PLUGIN[plugin] ?? "triangle");
 // Lookahead: an event carries the server clock (`at`, ms). Events play as far apart as the server sent them, LAG behind, so SSE and
 // main-thread jitter doesn't flam a chord or swing the drums; an event later than LAG plays at once.
@@ -515,7 +521,7 @@ export function voiceStart(id: string, key: number, plugin: string, o: VoiceSoun
   if (!live() || tones.has(id)) return;
   const kind = kindOf(plugin, o.sound);
   if (!ONESHOT.has(kind) && tones.size >= MAX) return;
-  const t = Math.max(ac!.currentTime, when(at) - late(o.mix)), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm, o.text, o.mix, o.bend);
+  const t = Math.max(ac!.currentTime, when(at) - late(o.mix)), v = note(R, kind, key ?? 60, t, o.gain ?? 1, o.vel, o.pan, o.ch, o.dur, o.bpm, o.text, o.mix, o.bend, o.samples);
   stats.started++;
   if (!v) { stats.stopped++; if (KITS.includes(kind) && (key === 35 || key === 36)) stats.kicks++; return; }
   tones.set(id, { ...v, until: t + Math.max(0.05, (o.dur ?? 0) * 0.92) }); stats.active = tones.size;
@@ -556,6 +562,14 @@ function cymbal(r: Rig, f: string, t: number, lvl: number, vel: number) {
   if (!b) return;
   const src = r.c.createBufferSource(), g = gain(r, 1.4 * lvl * (0.5 + vel)); // the files are loudness-matched (scripts/samples.mjs), not peak-normalized
   src.buffer = b; src.connect(g); g.connect(r.out); send(r, g, 0.15); src.start(t);
+}
+/** a `sample` channel's note: the file mapped to the key, or the nearest mapped key's repitched by the difference in semitones (so one mapping is a pitched sampler, several an FX kit), played to its end at the
+ *  level it was recorded at (vel 0.5 is unity); skipped until its buffer has loaded. ponytail: no loop or gate mode, and the note's length is ignored; add one when a song needs a held loop */
+function sampleNote(r: Rig, samples: Samples | undefined, key: number, t: number, lvl: number, vel: number) {
+  const m = mapped(samples, key), b = m && fetchSample(r.c, m[1]).b;
+  if (!m || !b) return;
+  const src = r.c.createBufferSource(), g = gain(r, lvl * (0.5 + vel));
+  src.buffer = b; src.playbackRate.value = 2 ** ((key - m[0]) / 12); bendOn(r, src.detune); src.connect(g); g.connect(r.out); src.start(t);
 }
 /** a shout (file shout/<word>, from fileOf) layered three times, ±25 cents, 0-25 ms apart and spread across the stereo field, so a single voice reads as a gang. The key doesn't matter */
 function shout(r: Rig, f: string, t: number, lvl: number, vel: number) {
@@ -635,7 +649,7 @@ export function chime() { stats.events++; if (!live()) return; ping([1568], "sin
 export function click(accent: boolean) { if (!live() || !sound.metro) return; ping([accent ? 1760 : 1175], "sine", accent ? 0.16 : 0.09, 0.05); stats.clicks++; }
 
 // ---- export: bounce a score to WAV offline (faster than real time, sample-exact timing) ----
-export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number; text?: string; bend?: [number, number][] }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number; mix?: any }[]; mix?: any };
+export type Score = { bpm: number; end: number; notes: { ch: string; key: number; start: number; len: number; vel?: number; pan?: number; text?: string; bend?: [number, number][] }[]; channels: { id: string; plugin?: string; sound?: string; gain?: number; mix?: any; samples?: Samples }[]; mix?: any };
 /** Render the score with the same instruments and return a 16-bit stereo WAV. Ticks: 96 per beat, tick 0 at the file's first sample. A 2 s tail lets reverb ring out.
  *  stem: render only that channel, pre-master (no master stage), with its own reverb and delay, still ducked by the other channels' kicks (they play silently) */
 export async function renderWav(s: Score, rate = RATE, stem?: string): Promise<ArrayBuffer> {
@@ -647,8 +661,8 @@ export async function renderWav(s: Score, rate = RATE, stem?: string): Promise<A
   const kindAt = (id: string) => kindOf(chs.get(id)?.plugin ?? "script", chs.get(id)?.sound), time = (n: Score["notes"][number]) => sec(n.start) + lead - late(chs.get(n.ch)?.mix);
   const kick = (n: Score["notes"][number]) => KITS.includes(kindAt(n.ch)) && (n.key === 35 || n.key === 36);
   const notes = s.notes.filter((n) => !stem || n.ch === stem || kick(n)).sort((a, b) => time(a) - time(b)), plays = (n: Score["notes"][number]) => !stem || n.ch === stem; // time order: each kick's pump automation cancels what follows it
-  const miss = await loadSamples(c, notes.filter(plays).flatMap((n) => fileOf(kindAt(n.ch), n.key, n.vel ?? 0.5, n.text) ?? [])); // decode before rendering starts (a no-op for the files the live tab has)
-  if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
+  const miss = await loadSamples(c, notes.filter(plays).flatMap((n) => fileOf(kindAt(n.ch), n.key, n.vel ?? 0.5, n.text, chs.get(n.ch)?.samples) ?? [])); // decode before rendering starts (a no-op for the files the live tab has)
+  if (miss.length) throw new Error(`sample files failed to load: ${miss.slice(0, 3).map((f) => f.startsWith("/") ? decodeURIComponent(f.slice(10).replace(/\?.*/, "")) : f).join(", ")}${miss.length > 3 ? ` and ${miss.length - 3} more` : ""}`);
   tempo(r, s.bpm);
   for (const id of new Set(notes.filter(plays).map((n) => n.ch))) if (chs.get(id)?.mix) chainOf(r, id, kindAt(id), chs.get(id)!.mix); // every chain up front, so the first kick already ducks it
   // Speed: every node wired to the output is processed in every block, sounding or not, so notes are made just ahead of the render (at a
@@ -661,7 +675,7 @@ export async function renderWav(s: Score, rate = RATE, stem?: string): Promise<A
     if (!plays(n)) { duckAt(r, t, n.ch, kindAt(n.ch)); continue; }
     const b: Rig = { ...r, out: gain(r), pump: gain(r), verb: gain(r), bus: true }, bus = [b.out, b.pump, b.verb];
     b.out.connect(r.out); b.pump.connect(r.pump); b.verb.connect(r.verb); made.length = 0;
-    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm, n.text, chs.get(n.ch)?.mix, n.bend);
+    const v = note(b, kindAt(n.ch), n.key, t, chs.get(n.ch)?.gain ?? 1, n.vel, n.pan, n.ch, sec(n.len), s.bpm, n.text, chs.get(n.ch)?.mix, n.bend, chs.get(n.ch)?.samples);
     if (v) release(v, t, t + Math.max(0.05, sec(n.len) * 0.92));
     let left = made.length;
     if (!left) ended.push(bus); else for (const x of made) x.onended = () => { if (--left === 0) ended.push(bus); };

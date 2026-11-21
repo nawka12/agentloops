@@ -43,7 +43,16 @@ export const patLen = (pat: any) => (pat.lengthSteps ?? 16) * STEP;
 const GENS = ["script", "llm.agent", "harness"];
 const PROCS = ["fx.gate", "fx.validator", "fx.formatter", "fx.limiter"];
 // channel `sound` (sonification instrument); keep in sync with SOUNDS in ui/sound.ts
-export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax", "trumpet", "trombone", "epiano", "organ", "upright", "vibes", "brushes", "eguitar", "distguitar", "ebass", "rock", "guitar", "pad", "noise", "strings", "violin", "harp", "glock", "timpani", "choir", "reese", "acid", "wobble", "808", "brass", "flute", "marimba", "heavy", "crunch", "chug", "clean", "pizz", "chop", "growl", "finger", "slap", "ooh", "shout", "synorgan", "whistle", "synchoir", "accordion", "edm"];
+export const SOUNDS = ["auto", "triangle", "sine", "square", "saw", "supersaw", "sub", "chip", "pluck", "bell", "drums", "piano", "sax", "trumpet", "trombone", "epiano", "organ", "upright", "vibes", "brushes", "eguitar", "distguitar", "ebass", "rock", "guitar", "pad", "noise", "strings", "violin", "harp", "glock", "timpani", "choir", "reese", "acid", "wobble", "808", "brass", "flute", "marimba", "heavy", "crunch", "chug", "clean", "pizz", "chop", "growl", "finger", "slap", "ooh", "shout", "synorgan", "whistle", "synchoir", "accordion", "edm", "sample"];
+export const AUDIO_TYPES: Record<string, string> = { ".wav": "audio/wav", ".ogg": "audio/ogg", ".flac": "audio/flac", ".mp3": "audio/mpeg" }; // the files a `sample` channel plays
+/** why `f` can't be a `sample` file (a relative path inside the song's folder: forward slashes, no . or .. segments, an audio extension), or undefined. Pure: whether the file exists is the export's business */
+export function badSamplePath(f: any) {
+  if (typeof f !== "string" || !f) return "must be a path string";
+  if (f.includes("\\") || f.includes("\0")) return "use forward slashes";
+  if (f.startsWith("/") || /^[a-z]:/i.test(f)) return "must be relative to the song's folder, not absolute";
+  if (f.split("/").some((x) => x === "" || x === "." || x === "..")) return 'must stay inside the song\'s folder (no "..", ".", or empty parts)';
+  if (!(f.slice(f.lastIndexOf(".")).toLowerCase() in AUDIO_TYPES)) return `must end in ${Object.keys(AUDIO_TYPES).join(", ")}`;
+}
 const KITS = ["drums", "brushes", "rock"], MASTERS = ["limiter", "compressor", "none"]; // the drum kits (their kick ducks), and the song's master stages (ui/sound.ts master())
 const ptr = (...parts: (string | number)[]) =>
   parts.map((x) => "/" + String(x).replace(/~/g, "~0").replace(/\//g, "~1")).join("");
@@ -119,6 +128,16 @@ export function validate(p: any): Err[] {
     if (c.output != null && !busIds.has(c.output)) err(at("output"), `Unknown output bus '${c.output}'`, `Use one of: ${[...busIds].join(", ")} (or omit for master)`);
     for (const k of ["mute", "solo"]) if (c[k] != null && typeof c[k] !== "boolean") err(at(k), `${k} must be true or false`, `Use "${k}": true, or remove it`);
     if (c.sound != null && !SOUNDS.includes(c.sound)) err(at("sound"), `unknown sound "${c.sound}"`, `Use one of: ${SOUNDS.join(", ")}`);
+    if (c.sound === "sample" || c.samples != null) {
+      const sm = c.samples, eg = '"samples": {"60": "sfx/riser.wav"}';
+      if (c.sound !== "sample") err(at("samples"), `samples only work with "sound": "sample" (this channel's sound is ${JSON.stringify(c.sound ?? "auto")})`, `Set "sound": "sample", or remove samples`);
+      else if (!sm || typeof sm !== "object" || Array.isArray(sm) || !Object.keys(sm).length) err(at("samples"), "a sample channel needs samples: MIDI key -> file", `Add e.g. ${eg}`);
+      else for (const [k, f] of Object.entries(sm)) {
+        if (!(/^\d+$/.test(k) && +k <= 127 && String(+k) === k)) err(at("samples", k), `bad key ${JSON.stringify(k)}: a MIDI key is a whole number from 0 to 127`, `Use e.g. ${eg}`);
+        const bad = badSamplePath(f);
+        if (bad) err(at("samples", k), `bad sample file ${JSON.stringify(f)}: ${bad}`, `Use a path like "sfx/riser.wav" in the song's folder`);
+      }
+    }
     if (c.gain != null && !(typeof c.gain === "number" && c.gain >= 0 && c.gain <= 1)) err(at("gain"), "gain must be a number from 0 to 1", 'Use e.g. "gain": 0.8');
     if (c.polyphony != null && !(Number.isInteger(c.polyphony) && c.polyphony > 0)) err(at("polyphony"), "polyphony must be a positive integer", "Use e.g. 4");
     if (c.retries != null && !(Number.isInteger(c.retries) && c.retries >= 0)) err(at("retries"), "retries must be an integer >= 0", "Use e.g. 1");
